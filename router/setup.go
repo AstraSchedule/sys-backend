@@ -51,11 +51,8 @@ func Setup() *gin.Engine {
 			auth.PUT("/system-users/:id", middleware.RequireWrite(), web.UpdateSystemUser)
 			auth.DELETE("/system-users/:id", middleware.RequireWrite(), web.DeleteSystemUser)
 
-			// Tenants
+			// Tenants (read-only, derived from Cloudflare + DB)
 			auth.GET("/tenants", web.ListTenants)
-			auth.POST("/tenants", middleware.RequireWrite(), web.CreateTenant)
-			auth.PUT("/tenants/:id", middleware.RequireWrite(), web.UpdateTenant)
-			auth.DELETE("/tenants/:id", middleware.RequireWrite(), web.DeleteTenant)
 
 			// Astra users (tenant user management)
 			auth.GET("/astra-users", web.ListAstraUsers)

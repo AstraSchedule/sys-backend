@@ -10,11 +10,12 @@ import (
 )
 
 type Config struct {
-	Server ServerConfig `mapstructure:"server"`
-	DB     DBConfig     `mapstructure:"db"`
-	SysDB  DBConfig     `mapstructure:"sys_db"`
-	Astra  AstraConfig  `mapstructure:"astra"`
-	Log    LogConfig    `mapstructure:"log"`
+	Server     ServerConfig     `mapstructure:"server"`
+	DB         DBConfig         `mapstructure:"db"`
+	SysDB      DBConfig         `mapstructure:"sys_db"`
+	Astra      AstraConfig      `mapstructure:"astra"`
+	Cloudflare CloudflareConfig `mapstructure:"cloudflare"`
+	Log        LogConfig        `mapstructure:"log"`
 }
 
 type ServerConfig struct {
@@ -36,6 +37,12 @@ type DBConfig struct {
 type AstraConfig struct {
 	URL   string `mapstructure:"url"`
 	Token string `mapstructure:"token"`
+}
+
+type CloudflareConfig struct {
+	APIToken string `mapstructure:"api_token"`
+	ZoneID   string `mapstructure:"zone_id"`
+	Domain   string `mapstructure:"domain"`
 }
 
 type SecretConfig struct {
@@ -89,7 +96,8 @@ func LoadConfig() error {
 		"server.host", "server.port",
 		"db.type", "db.host", "db.port", "db.user", "db.pass", "db.name", "db.path",
 		"sys_db.type", "sys_db.host", "sys_db.port", "sys_db.user", "sys_db.pass", "sys_db.name", "sys_db.path",
-		"secret.token",
+		"astra.url", "astra.token",
+		"cloudflare.api_token", "cloudflare.zone_id", "cloudflare.domain",
 		"log.debug",
 	}
 	for _, key := range envKeys {
