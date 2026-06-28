@@ -1,0 +1,22 @@
+# 系统后端配置 - SQLite 模式
+server:
+  host: "0.0.0.0"
+  port: 9001
+  domain:
+    - "http://localhost:5174"
+
+db:
+  # AstraScheduleServerGo 数据库配置
+  type: "sqlite"
+  path: "/data/astra/astra_schedule.db"
+
+sys_db:
+  # sys-backend 自有数据库配置
+  type: "sqlite"
+  path: "./data/sys_backend.db"
+
+secret:
+  token: "change_this_to_a_secure_token"
+
+log:
+  debug: true

@@ -1,0 +1,21 @@
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 9001,
+    "domain": ["http://localhost:5174"]
+  },
+  "db": {
+    "type": "sqlite",
+    "path": "/data/astra/astra_schedule.db"
+  },
+  "sys_db": {
+    "type": "sqlite",
+    "path": "./data/sys_backend.db"
+  },
+  "secret": {
+    "token": "change_this_to_a_secure_token"
+  },
+  "log": {
+    "debug": true
+  }
+}

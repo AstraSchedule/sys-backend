@@ -1,0 +1,28 @@
+[server]
+host = "0.0.0.0"
+port = 9001
+domain = ["http://localhost:5174"]
+
+[db]
+# AstraScheduleServerGo 数据库配置
+# type: mysql 或 sqlite
+type = "sqlite"
+path = "/data/astra/astra_schedule.db"
+
+# MySQL 配置（type=mysql 时使用）
+# host = "localhost"
+# port = 3306
+# user = "root"
+# pass = ""
+# name = "astraschedule"
+
+[sys_db]
+# sys-backend 自有数据库配置
+type = "sqlite"
+path = "./data/sys_backend.db"
+
+[secret]
+token = "change_this_to_a_secure_token"
+
+[log]
+debug = true
