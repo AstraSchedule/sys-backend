@@ -23,7 +23,6 @@ func StartInit() {
 
 	// Auto migrate
 	db.SysDB.AutoMigrate(&dbTable.SystemUser{})
-	db.SysDB.AutoMigrate(&dbTable.Tenant{})
 
 	// Create default admin user
 	createDefaultAdmin()
@@ -31,7 +30,7 @@ func StartInit() {
 
 func createDefaultAdmin() {
 	var count int64
-	db.SysDB.Model(&dbTable.SystemUser{}).Count(&count)
+	db.SysDB.Model(&dbTable.SystemUser{}).Where("username = ?", "admin").Count(&count)
 	if count == 0 {
 		hash, _ := service.HashPassword("admin")
 		admin := dbTable.SystemUser{

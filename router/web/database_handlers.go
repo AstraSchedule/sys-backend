@@ -65,8 +65,6 @@ func DropTable(c *gin.Context) {
 	switch tableName {
 	case "system_users":
 		db.SysDB.AutoMigrate(&dbTable.SystemUser{})
-	case "tenants":
-		db.SysDB.AutoMigrate(&dbTable.Tenant{})
 	}
 
 	c.JSON(http.StatusOK, gin.H{"status": 200, "message": fmt.Sprintf("表 %s 已删除并重建", tableName)})
@@ -110,7 +108,6 @@ func RebuildDatabase(c *gin.Context) {
 		db.SysDB.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %s", t))
 	}
 	db.SysDB.AutoMigrate(&dbTable.SystemUser{})
-	db.SysDB.AutoMigrate(&dbTable.Tenant{})
 
 	// Restore sys
 	if req.Import {
