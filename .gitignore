@@ -3,3 +3,4 @@ data/
 *.exe
 *.log
 config.toml
+config.env.json
