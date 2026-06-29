@@ -46,7 +46,7 @@ resources:
       functionName: AstraSys-Go
       sessionAffinity: NONE
       memorySize: 512
-      code: ./bootstrap
+      code: ./code.zip
       triggers:
         - triggerConfig:
             methods:
