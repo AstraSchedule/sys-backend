@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"sys-backend/config"
 	"sys-backend/db"
 	"sys-backend/model/dbTable"
@@ -160,6 +161,13 @@ func getDBForTable(name string) *gorm.DB {
 	return db.DB
 }
 
+func loadTLSContent(val string) ([]byte, error) {
+	if strings.HasPrefix(val, "-----") {
+		return []byte(val), nil
+	}
+	return os.ReadFile(val)
+}
+
 func callAstraDropTable(tableName string) error {
 	astraURL := config.Configs.Astra.URL
 	if astraURL == "" {
@@ -171,15 +179,23 @@ func callAstraDropTable(tableName string) error {
 	if err != nil {
 		return err
 	}
-	// No BasicAuth needed - mTLS handles authentication at Cloudflare WAF
 
 	// Build TLS client with mTLS certificate
 	transport := &http.Transport{}
 	cfCfg := config.Configs.Cloudflare
 	if cfCfg.TLSCert != "" && cfCfg.TLSKey != "" {
-		cert, err := tls.LoadX509KeyPair(cfCfg.TLSCert, cfCfg.TLSKey)
+		certPEM, err := loadTLSContent(cfCfg.TLSCert)
 		if err != nil {
 			return fmt.Errorf("加载客户端证书失败: %v", err)
+		}
+		keyPEM, err := loadTLSContent(cfCfg.TLSKey)
+		if err != nil {
+			return fmt.Errorf("加载客户端私钥失败: %v", err)
+		}
+
+		cert, err := tls.X509KeyPair(certPEM, keyPEM)
+		if err != nil {
+			return fmt.Errorf("解析客户端证书失败: %v", err)
 		}
 
 		tlsCfg := &tls.Config{
@@ -187,12 +203,12 @@ func callAstraDropTable(tableName string) error {
 		}
 
 		if cfCfg.TLSCACert != "" {
-			caCert, err := os.ReadFile(cfCfg.TLSCACert)
+			caPEM, err := loadTLSContent(cfCfg.TLSCACert)
 			if err != nil {
-				return fmt.Errorf("读取 CA 证书失败: %v", err)
+				return fmt.Errorf("加载 CA 证书失败: %v", err)
 			}
 			caCertPool := x509.NewCertPool()
-			caCertPool.AppendCertsFromPEM(caCert)
+			caCertPool.AppendCertsFromPEM(caPEM)
 			tlsCfg.RootCAs = caCertPool
 		}
 
