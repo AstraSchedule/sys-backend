@@ -40,9 +40,12 @@ type AstraConfig struct {
 }
 
 type CloudflareConfig struct {
-	APIToken string `mapstructure:"api_token"`
-	ZoneID   string `mapstructure:"zone_id"`
-	Domain   string `mapstructure:"domain"`
+	APIToken  string `mapstructure:"api_token"`
+	ZoneID    string `mapstructure:"zone_id"`
+	Domain    string `mapstructure:"domain"`
+	TLSCert   string `mapstructure:"tls_cert"`
+	TLSKey    string `mapstructure:"tls_key"`
+	TLSCACert string `mapstructure:"tls_ca_cert"`
 }
 
 type SecretConfig struct {

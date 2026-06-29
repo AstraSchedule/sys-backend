@@ -2,9 +2,12 @@ package web
 
 import (
 	"bytes"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"sys-backend/config"
 	"sys-backend/db"
 	"sys-backend/model/dbTable"
@@ -159,7 +162,6 @@ func getDBForTable(name string) *gorm.DB {
 
 func callAstraDropTable(tableName string) error {
 	astraURL := config.Configs.Astra.URL
-	astraToken := config.Configs.Astra.Token
 	if astraURL == "" {
 		return fmt.Errorf("Astra 后端地址未配置")
 	}
@@ -169,9 +171,35 @@ func callAstraDropTable(tableName string) error {
 	if err != nil {
 		return err
 	}
-	req.SetBasicAuth("AstraSchedule", astraToken)
+	// No BasicAuth needed - mTLS handles authentication at Cloudflare WAF
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	// Build TLS client with mTLS certificate
+	transport := &http.Transport{}
+	cfCfg := config.Configs.Cloudflare
+	if cfCfg.TLSCert != "" && cfCfg.TLSKey != "" {
+		cert, err := tls.LoadX509KeyPair(cfCfg.TLSCert, cfCfg.TLSKey)
+		if err != nil {
+			return fmt.Errorf("加载客户端证书失败: %v", err)
+		}
+
+		tlsCfg := &tls.Config{
+			Certificates: []tls.Certificate{cert},
+		}
+
+		if cfCfg.TLSCACert != "" {
+			caCert, err := os.ReadFile(cfCfg.TLSCACert)
+			if err != nil {
+				return fmt.Errorf("读取 CA 证书失败: %v", err)
+			}
+			caCertPool := x509.NewCertPool()
+			caCertPool.AppendCertsFromPEM(caCert)
+			tlsCfg.RootCAs = caCertPool
+		}
+
+		transport.TLSClientConfig = tlsCfg
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second, Transport: transport}
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
