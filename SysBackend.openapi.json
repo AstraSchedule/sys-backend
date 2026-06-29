@@ -1,0 +1,718 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "AstraSys-Go",
+    "description": "星程课表系统管理后端 API。提供 Dashboard 认证、系统用户管理、租户用户管理、数据浏览编辑、数据导入导出、数据库重建等功能。\n\n- JWT 认证接口使用 `jwtAuth` 安全方案（通过 POST /web/auth/login 获取 Token）。\n- 写入接口还需在 `X-Verify-Password` 头中提供密码进行二次确认。\n",
+    "version": "1.0.0"
+  },
+  "tags": [
+    { "name": "health", "description": "健康检查" },
+    { "name": "auth", "description": "认证（登录、用户信息、改密、密码验证）" },
+    { "name": "system-users", "description": "系统用户管理（Dashboard 账户）" },
+    { "name": "tenants", "description": "租户管理（Cloudflare DNS 对比 DB namespace）" },
+    { "name": "astra-users", "description": "租户用户管理（操作 Astra 库 users 表）" },
+    { "name": "data", "description": "数据管理（浏览/编辑/删除数据库记录）" },
+    { "name": "backup", "description": "数据导出/导入" },
+    { "name": "database", "description": "数据库重建/单表 DROP" }
+  ],
+  "paths": {
+    "/": {
+      "get": {
+        "summary": "Hello World",
+        "operationId": "getRoot",
+        "tags": ["health"],
+        "responses": {
+          "200": {
+            "description": "服务可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": { "type": "string", "example": "Hello World" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/web/health": {
+      "get": {
+        "summary": "健康检查",
+        "operationId": "healthCheck",
+        "tags": ["health"],
+        "responses": {
+          "200": {
+            "description": "服务正常",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "status": { "type": "string", "example": "ok" } }
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/web/auth/login": {
+      "post": {
+        "summary": "用户登录",
+        "operationId": "login",
+        "tags": ["auth"],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["username", "password"],
+                "properties": {
+                  "username": { "type": "string" },
+                  "password": { "type": "string" }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "登录成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["token", "must_change_pwd", "user"],
+                  "properties": {
+                    "token": { "type": "string", "description": "JWT Token" },
+                    "must_change_pwd": { "type": "boolean" },
+                    "user": {
+                      "type": "object",
+                      "properties": {
+                        "id": { "type": "integer" },
+                        "username": { "type": "string" },
+                        "role": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "参数错误", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DetailResponse" } } } },
+          "401": { "description": "用户名或密码错误", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DetailResponse" } } } }
+        },
+        "security": []
+      }
+    },
+    "/web/auth/me": {
+      "get": {
+        "summary": "获取当前用户信息",
+        "operationId": "getMe",
+        "tags": ["auth"],
+        "responses": {
+          "200": {
+            "description": "用户信息",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "integer" },
+                    "username": { "type": "string" },
+                    "role": { "type": "string" },
+                    "must_change_pwd": { "type": "boolean" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "未认证" }
+        },
+        "security": [{ "jwtAuth": [] }]
+      }
+    },
+    "/web/auth/change-password": {
+      "post": {
+        "summary": "修改密码",
+        "operationId": "changePassword",
+        "tags": ["auth"],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["old_password", "new_password"],
+                "properties": {
+                  "old_password": { "type": "string" },
+                  "new_password": { "type": "string", "minLength": 6 },
+                  "new_username": { "type": "string", "description": "可选；修改用户名（至少 3 位）" }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": { "description": "修改成功", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StatusMessage" } } } },
+          "400": { "description": "参数错误", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DetailResponse" } } } },
+          "401": { "description": "未认证" }
+        },
+        "security": [{ "jwtAuth": [] }]
+      }
+    },
+    "/web/auth/verify-password": {
+      "post": {
+        "summary": "验证密码",
+        "operationId": "verifyPassword",
+        "tags": ["auth"],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["password"],
+                "properties": { "password": { "type": "string" } }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": { "description": "验证通过", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StatusMessage" } } } },
+          "401": { "description": "密码错误或未认证" }
+        },
+        "security": [{ "jwtAuth": [] }]
+      }
+    },
+    "/web/system-users": {
+      "get": {
+        "summary": "获取系统用户列表",
+        "operationId": "listSystemUsers",
+        "tags": ["system-users"],
+        "responses": {
+          "200": {
+            "description": "用户列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/SystemUser" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [{ "jwtAuth": [] }]
+      },
+      "post": {
+        "summary": "创建系统用户",
+        "operationId": "createSystemUser",
+        "tags": ["system-users"],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["username", "password", "role"],
+                "properties": {
+                  "username": { "type": "string" },
+                  "password": { "type": "string", "minLength": 6 },
+                  "role": { "type": "string", "enum": ["readwrite", "readonly"] }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": { "description": "创建成功", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SystemUserResponse" } } } },
+          "409": { "description": "用户名已存在" }
+        },
+        "security": [{ "jwtAuth": [] }]
+      }
+    },
+    "/web/system-users/{id}": {
+      "put": {
+        "summary": "更新系统用户",
+        "operationId": "updateSystemUser",
+        "tags": ["system-users"],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "username": { "type": "string" },
+                  "password": { "type": "string", "minLength": 6 },
+                  "role": { "type": "string", "enum": ["readwrite", "readonly"] }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": { "description": "更新成功", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SystemUserResponse" } } } },
+          "404": { "description": "用户不存在" }
+        },
+        "security": [{ "jwtAuth": [] }]
+      },
+      "delete": {
+        "summary": "删除系统用户",
+        "operationId": "deleteSystemUser",
+        "tags": ["system-users"],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": { "description": "删除成功", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DeleteResponse" } } } },
+          "404": { "description": "用户不存在" }
+        },
+        "security": [{ "jwtAuth": [] }]
+      }
+    },
+    "/web/tenants": {
+      "get": {
+        "summary": "获取租户列表",
+        "description": "对比 Cloudflare DNS 与数据库 namespace，返回租户状态（normal/orphan/abnormal）。",
+        "operationId": "listTenants",
+        "tags": ["tenants"],
+        "responses": {
+          "200": {
+            "description": "租户列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Tenant" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [{ "jwtAuth": [] }]
+      }
+    },
+    "/web/astra-users": {
+      "get": {
+        "summary": "获取租户用户列表",
+        "operationId": "listAstraUsers",
+        "tags": ["astra-users"],
+        "parameters": [
+          { "name": "namespace", "in": "query", "required": false, "schema": { "type": "string" }, "description": "按命名空间筛选" }
+        ],
+        "responses": {
+          "200": {
+            "description": "用户列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/AstraUser" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [{ "jwtAuth": [] }]
+      },
+      "post": {
+        "summary": "创建租户用户",
+        "operationId": "createAstraUser",
+        "tags": ["astra-users"],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["namespace", "username", "password", "role"],
+                "properties": {
+                  "namespace": { "type": "string", "description": "如：cn/getastra/school-a" },
+                  "username": { "type": "string" },
+                  "password": { "type": "string" },
+                  "role": { "type": "string", "enum": ["admin", "school_w", "grade_w", "class_w", "readonly"] },
+                  "scope": { "type": "string", "description": "作用域，如：school/grade/class" }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": { "description": "创建成功" },
+          "409": { "description": "用户名已存在" }
+        },
+        "security": [{ "jwtAuth": [] }]
+      }
+    },
+    "/web/astra-users/{id}": {
+      "put": {
+        "summary": "更新租户用户",
+        "operationId": "updateAstraUser",
+        "tags": ["astra-users"],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "username": { "type": "string" },
+                  "password": { "type": "string" },
+                  "role": { "type": "string" },
+                  "scope": { "type": "string" }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": { "description": "更新成功" }
+        },
+        "security": [{ "jwtAuth": [] }]
+      },
+      "delete": {
+        "summary": "删除租户用户",
+        "operationId": "deleteAstraUser",
+        "tags": ["astra-users"],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": { "description": "删除成功" },
+          "404": { "description": "用户不存在" }
+        },
+        "security": [{ "jwtAuth": [] }]
+      }
+    },
+    "/web/data/tables": {
+      "get": {
+        "summary": "获取数据库表列表",
+        "operationId": "listTables",
+        "tags": ["data"],
+        "responses": {
+          "200": {
+            "description": "表名列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": { "type": "array", "items": { "type": "string" } }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [{ "jwtAuth": [] }]
+      }
+    },
+    "/web/data/{table}": {
+      "get": {
+        "summary": "获取表数据",
+        "operationId": "listTableData",
+        "tags": ["data"],
+        "parameters": [
+          { "name": "table", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "记录列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": { "type": "array", "items": { "type": "object" } }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [{ "jwtAuth": [] }]
+      },
+      "post": {
+        "summary": "新增记录",
+        "operationId": "createRecord",
+        "tags": ["data"],
+        "parameters": [
+          { "name": "table", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "type": "object" }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": { "description": "创建成功" }
+        },
+        "security": [{ "jwtAuth": [] }]
+      }
+    },
+    "/web/data/{table}/{id}": {
+      "get": {
+        "summary": "获取单条记录",
+        "operationId": "getRecord",
+        "tags": ["data"],
+        "parameters": [
+          { "name": "table", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "记录详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": { "data": { "type": "object" } }
+                }
+              }
+            }
+          },
+          "404": { "description": "记录不存在" }
+        },
+        "security": [{ "jwtAuth": [] }]
+      },
+      "put": {
+        "summary": "更新记录",
+        "operationId": "updateRecord",
+        "tags": ["data"],
+        "parameters": [
+          { "name": "table", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "type": "object" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": { "description": "更新成功" }
+        },
+        "security": [{ "jwtAuth": [] }]
+      },
+      "delete": {
+        "summary": "删除记录",
+        "operationId": "deleteRecord",
+        "tags": ["data"],
+        "parameters": [
+          { "name": "table", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "删除成功" },
+          "404": { "description": "记录不存在" }
+        },
+        "security": [{ "jwtAuth": [] }]
+      }
+    },
+    "/web/backup/export": {
+      "get": {
+        "summary": "数据导出",
+        "operationId": "exportBackup",
+        "tags": ["backup"],
+        "parameters": [
+          { "name": "mode", "in": "query", "required": false, "schema": { "type": "string", "enum": ["full", "saas", "dashboard"], "default": "full" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "JSON 备份文件",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/BackupPayload" }
+              }
+            }
+          }
+        },
+        "security": [{ "jwtAuth": [] }]
+      }
+    },
+    "/web/backup/import": {
+      "post": {
+        "summary": "数据导入",
+        "operationId": "importBackup",
+        "tags": ["backup"],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/BackupPayload" }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": { "description": "导入成功" }
+        },
+        "security": [{ "jwtAuth": [] }]
+      }
+    },
+    "/web/database/rebuild": {
+      "post": {
+        "summary": "重建数据库",
+        "operationId": "rebuildDatabase",
+        "tags": ["database"],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "scope": { "type": "string", "enum": ["full", "astra", "sys"], "default": "full", "description": "重建范围" },
+                  "import": { "type": "boolean", "default": false, "description": "重建后是否恢复数据" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "重建成功" }
+        },
+        "security": [{ "jwtAuth": [] }]
+      }
+    },
+    "/web/database/drop/{table}": {
+      "delete": {
+        "summary": "删除并重建单表",
+        "operationId": "dropTable",
+        "tags": ["database"],
+        "parameters": [
+          { "name": "table", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "删除并重建成功" },
+          "400": { "description": "表不存在或不允许删除" }
+        },
+        "security": [{ "jwtAuth": [] }]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "SystemUser": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "username": { "type": "string" },
+          "role": { "type": "string", "enum": ["readwrite", "readonly"] },
+          "must_change_pwd": { "type": "boolean" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "SystemUserResponse": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "integer", "example": 200 },
+          "user": { "$ref": "#/components/schemas/SystemUser" }
+        }
+      },
+      "AstraUser": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "namespace": { "type": "string" },
+          "username": { "type": "string" },
+          "role": { "type": "string" },
+          "scope": { "type": "string" },
+          "must_change_pwd": { "type": "boolean" },
+          "must_change_username": { "type": "boolean" }
+        }
+      },
+      "Tenant": {
+        "type": "object",
+        "properties": {
+          "subdomain": { "type": "string" },
+          "namespace": { "type": "string" },
+          "status": { "type": "string", "enum": ["normal", "orphan", "abnormal"] }
+        }
+      },
+      "BackupPayload": {
+        "type": "object",
+        "properties": {
+          "meta": { "type": "object" },
+          "system_users": { "type": "array", "items": { "type": "object" } },
+          "tenants": { "type": "array", "items": { "type": "object" } },
+          "schedules": { "type": "array", "items": { "type": "object" } },
+          "client_configs": { "type": "array", "items": { "type": "object" } },
+          "timetables": { "type": "array", "items": { "type": "object" } },
+          "subjects": { "type": "array", "items": { "type": "object" } },
+          "data_versions": { "type": "array", "items": { "type": "object" } },
+          "autorun_records": { "type": "array", "items": { "type": "object" } },
+          "countdown_records": { "type": "array", "items": { "type": "object" } },
+          "users": { "type": "array", "items": { "type": "object" } }
+        }
+      },
+      "DetailResponse": {
+        "type": "object",
+        "properties": { "detail": { "type": "string" } }
+      },
+      "StatusMessage": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "integer", "example": 200 },
+          "message": { "type": "string" }
+        }
+      },
+      "DeleteResponse": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "integer", "example": 200 },
+          "deleted": { "type": "integer", "format": "int64" }
+        }
+      }
+    },
+    "securitySchemes": {
+      "jwtAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "JWT Token，通过 POST /web/auth/login 获取。写入接口还需在 X-Verify-Password 头中提供密码。"
+      }
+    }
+  },
+  "servers": [
+    { "url": "https://sys.getastra.cn" },
+    { "url": "http://localhost:9001", "description": "本地开发" }
+  ],
+  "security": []
+}
