@@ -30,7 +30,7 @@ func StartInit() {
 
 func createDefaultAdmin() {
 	var count int64
-	db.SysDB.Model(&dbTable.SystemUser{}).Where("username = ?", "admin").Count(&count)
+	db.SysDB.Model(&dbTable.SystemUser{}).Where("role = ?", "readwrite").Count(&count)
 	if count == 0 {
 		hash, _ := service.HashPassword("admin")
 		admin := dbTable.SystemUser{
