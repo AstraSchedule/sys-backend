@@ -711,8 +711,7 @@
     }
   },
   "servers": [
-    { "url": "https://sys.getastra.cn" },
-    { "url": "http://localhost:9001", "description": "本地开发" }
+    { "url": "https://sys.getastra.cn" }
   ],
   "security": []
 }
