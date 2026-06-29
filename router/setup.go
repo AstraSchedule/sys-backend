@@ -21,7 +21,7 @@ func Setup() *gin.Engine {
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     origins,
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Authorization", "Content-Type", "Accept", "Origin"},
+		AllowHeaders:     []string{"Authorization", "Content-Type", "Accept", "Origin", "X-Verify-Password"},
 		ExposeHeaders:    []string{"Content-Length", "Content-Type"},
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
