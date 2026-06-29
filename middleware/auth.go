@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 	"sys-backend/config"
+	"sys-backend/db"
 	"sys-backend/service"
 
 	"github.com/gin-gonic/gin"
@@ -57,6 +58,21 @@ func RequireWrite() gin.HandlerFunc {
 
 		if jwtClaims.Role != "readwrite" {
 			c.JSON(http.StatusForbidden, gin.H{"detail": "权限不足"})
+			c.Abort()
+			return
+		}
+
+		// 验证密码
+		password := c.GetHeader("X-Verify-Password")
+		if password == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"detail": "需要提供密码"})
+			c.Abort()
+			return
+		}
+
+		user, err := db.GetUserByID(jwtClaims.UserID)
+		if err != nil || !service.CheckPassword(password, user.PasswordHash) {
+			c.JSON(http.StatusUnauthorized, gin.H{"detail": "密码错误"})
 			c.Abort()
 			return
 		}
