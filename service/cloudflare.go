@@ -14,11 +14,11 @@ import (
 )
 
 type CFRecord struct {
-	ID      string   `json:"id"`
-	Name    string   `json:"name"`
-	Type    string   `json:"type"`
-	Content string   `json:"content"`
-	Comment string   `json:"comment"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	Content string `json:"content"`
+	Comment string `json:"comment"`
 }
 
 type CFResponse struct {
