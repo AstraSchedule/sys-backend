@@ -38,8 +38,26 @@ func isAstraTable(name string) bool {
 	return false
 }
 
+func isAllowedTable(name string) bool {
+	return isAstraTable(name) || isSysTable(name)
+}
+
+func isSysTable(name string) bool {
+	for _, t := range sysTableNames {
+		if t == name {
+			return true
+		}
+	}
+	return false
+}
+
 func DropTable(c *gin.Context) {
 	tableName := c.Param("table")
+
+	if !isAllowedTable(tableName) {
+		c.JSON(http.StatusBadRequest, gin.H{"detail": "不允许的操作表"})
+		return
+	}
 
 	// Check if table exists in either database
 	var count int64
@@ -65,13 +83,65 @@ func DropTable(c *gin.Context) {
 
 	// Sys tables: direct GORM with model-based migration
 	gdb := getDBForTable(tableName)
-	gdb.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %s", tableName))
+	gdb.Exec("DROP TABLE IF EXISTS " + tableName)
 	switch tableName {
 	case "system_users":
 		db.SysDB.AutoMigrate(&dbTable.SystemUser{})
 	}
 
 	c.JSON(http.StatusOK, gin.H{"status": 200, "message": fmt.Sprintf("表 %s 已删除并重建", tableName)})
+}
+
+type backupEntry struct {
+	Name string
+	Data []map[string]interface{}
+}
+
+// backupSysTables 备份 sys 数据库中的指定表
+func backupSysTables(tables []string) []backupEntry {
+	var backups []backupEntry
+	for _, t := range tables {
+		var rows []map[string]interface{}
+		db.SysDB.Table(t).Find(&rows)
+		backups = append(backups, backupEntry{Name: t, Data: rows})
+	}
+	return backups
+}
+
+// dropAndRestoreSys 删除并恢复 sys 数据库中的表
+func dropAndRestoreSys(tables []string, backups []backupEntry, shouldImport bool) {
+	for _, t := range tables {
+		db.SysDB.Exec("DROP TABLE IF EXISTS " + t)
+	}
+	db.SysDB.AutoMigrate(&dbTable.SystemUser{})
+	if shouldImport {
+		for _, b := range backups {
+			for _, row := range b.Data {
+				delete(row, "id")
+				delete(row, "created_at")
+				delete(row, "updated_at")
+				db.SysDB.Table(b.Name).Create(row)
+			}
+			logrus.Infof("已恢复表 %s: %d 条记录", b.Name, len(b.Data))
+		}
+	}
+}
+
+// ensureDefaultAdmin 确保存在默认管理员账户
+func ensureDefaultAdmin() {
+	var count int64
+	db.SysDB.Model(&dbTable.SystemUser{}).Count(&count)
+	if count > 0 {
+		return
+	}
+	hash, _ := service.HashPassword("admin")
+	db.SysDB.Create(&dbTable.SystemUser{
+		Username:      "admin",
+		PasswordHash:  hash,
+		Role:          "readwrite",
+		MustChangePwd: true,
+	})
+	logrus.Info("已创建默认管理员: admin/admin")
 }
 
 func RebuildDatabase(c *gin.Context) {
@@ -95,58 +165,17 @@ func RebuildDatabase(c *gin.Context) {
 		astraTbls = astraTableNames
 	}
 
-	// Backup sys
-	type backupEntry struct {
-		Name string
-		Data []map[string]interface{}
-	}
-	var sysBackups []backupEntry
-	for _, t := range sysTbls {
-		var rows []map[string]interface{}
-		db.SysDB.Table(t).Find(&rows)
-		sysBackups = append(sysBackups, backupEntry{Name: t, Data: rows})
-	}
+	backups := backupSysTables(sysTbls)
+	dropAndRestoreSys(sysTbls, backups, req.Import)
 
-	// Drop sys
-	for _, t := range sysTbls {
-		db.SysDB.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %s", t))
-	}
-	db.SysDB.AutoMigrate(&dbTable.SystemUser{})
-
-	// Restore sys
-	if req.Import {
-		for _, b := range sysBackups {
-			for _, row := range b.Data {
-				delete(row, "id")
-				delete(row, "created_at")
-				delete(row, "updated_at")
-				db.SysDB.Table(b.Name).Create(row)
-			}
-			logrus.Infof("已恢复表 %s: %d 条记录", b.Name, len(b.Data))
-		}
-	}
-
-	// Astra: delegate to AstraScheduleServerGo
 	for _, t := range astraTbls {
 		if err := callAstraDropTable(t); err != nil {
 			logrus.Warnf("调用 Astra 后端删除表 %s 失败: %v", t, err)
 		}
 	}
 
-	// Default admin
 	if req.Scope == "full" || req.Scope == "sys" {
-		var count int64
-		db.SysDB.Model(&dbTable.SystemUser{}).Count(&count)
-		if count == 0 {
-			hash, _ := service.HashPassword("admin")
-			db.SysDB.Create(&dbTable.SystemUser{
-				Username:      "admin",
-				PasswordHash:  hash,
-				Role:          "readwrite",
-				MustChangePwd: true,
-			})
-			logrus.Info("已创建默认管理员: admin/admin")
-		}
+		ensureDefaultAdmin()
 	}
 
 	c.JSON(http.StatusOK, gin.H{"status": 200, "message": "数据库重建成功", "scope": req.Scope})
@@ -168,6 +197,39 @@ func loadTLSContent(val string) ([]byte, error) {
 	return os.ReadFile(val)
 }
 
+// buildMTLSTransport 构建带 mTLS 客户端证书的 HTTP Transport
+func buildMTLSTransport() (*http.Transport, error) {
+	transport := &http.Transport{}
+	cfCfg := config.Configs.Cloudflare
+	if cfCfg.TLSCert == "" || cfCfg.TLSKey == "" {
+		return transport, nil
+	}
+	certPEM, err := loadTLSContent(cfCfg.TLSCert)
+	if err != nil {
+		return nil, fmt.Errorf("加载客户端证书失败: %v", err)
+	}
+	keyPEM, err := loadTLSContent(cfCfg.TLSKey)
+	if err != nil {
+		return nil, fmt.Errorf("加载客户端私钥失败: %v", err)
+	}
+	cert, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		return nil, fmt.Errorf("解析客户端证书失败: %v", err)
+	}
+	tlsCfg := &tls.Config{Certificates: []tls.Certificate{cert}}
+	if cfCfg.TLSCACert != "" {
+		caPEM, err := loadTLSContent(cfCfg.TLSCACert)
+		if err != nil {
+			return nil, fmt.Errorf("加载 CA 证书失败: %v", err)
+		}
+		caCertPool := x509.NewCertPool()
+		caCertPool.AppendCertsFromPEM(caPEM)
+		tlsCfg.RootCAs = caCertPool
+	}
+	transport.TLSClientConfig = tlsCfg
+	return transport, nil
+}
+
 func callAstraDropTable(tableName string) error {
 	astraURL := config.Configs.Astra.URL
 	if astraURL == "" {
@@ -180,39 +242,13 @@ func callAstraDropTable(tableName string) error {
 		return err
 	}
 
-	// Build TLS client with mTLS certificate
-	transport := &http.Transport{}
-	cfCfg := config.Configs.Cloudflare
-	if cfCfg.TLSCert != "" && cfCfg.TLSKey != "" {
-		certPEM, err := loadTLSContent(cfCfg.TLSCert)
-		if err != nil {
-			return fmt.Errorf("加载客户端证书失败: %v", err)
-		}
-		keyPEM, err := loadTLSContent(cfCfg.TLSKey)
-		if err != nil {
-			return fmt.Errorf("加载客户端私钥失败: %v", err)
-		}
+	if secret := config.Configs.Astra.InternalSecret; secret != "" {
+		req.Header.Set("X-Internal-Secret", secret)
+	}
 
-		cert, err := tls.X509KeyPair(certPEM, keyPEM)
-		if err != nil {
-			return fmt.Errorf("解析客户端证书失败: %v", err)
-		}
-
-		tlsCfg := &tls.Config{
-			Certificates: []tls.Certificate{cert},
-		}
-
-		if cfCfg.TLSCACert != "" {
-			caPEM, err := loadTLSContent(cfCfg.TLSCACert)
-			if err != nil {
-				return fmt.Errorf("加载 CA 证书失败: %v", err)
-			}
-			caCertPool := x509.NewCertPool()
-			caCertPool.AppendCertsFromPEM(caPEM)
-			tlsCfg.RootCAs = caCertPool
-		}
-
-		transport.TLSClientConfig = tlsCfg
+	transport, err := buildMTLSTransport()
+	if err != nil {
+		return err
 	}
 
 	client := &http.Client{Timeout: 30 * time.Second, Transport: transport}

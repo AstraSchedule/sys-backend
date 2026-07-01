@@ -35,8 +35,9 @@ type DBConfig struct {
 }
 
 type AstraConfig struct {
-	URL   string `mapstructure:"url"`
-	Token string `mapstructure:"token"`
+	URL            string `mapstructure:"url"`
+	Token          string `mapstructure:"token"`
+	InternalSecret string `mapstructure:"internal_secret"`
 }
 
 type CloudflareConfig struct {
@@ -99,7 +100,7 @@ func LoadConfig() error {
 		"server.host", "server.port",
 		"db.type", "db.host", "db.port", "db.user", "db.pass", "db.name", "db.path",
 		"sys_db.type", "sys_db.host", "sys_db.port", "sys_db.user", "sys_db.pass", "sys_db.name", "sys_db.path",
-		"astra.url", "astra.token",
+		"astra.url", "astra.token", "astra.internal_secret",
 		"cloudflare.api_token", "cloudflare.zone_id", "cloudflare.domain",
 		"log.debug",
 	}

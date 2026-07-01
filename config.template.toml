@@ -21,6 +21,11 @@ path = "/data/astra/astra_schedule.db"
 type = "sqlite"
 path = "./data/sys_backend.db"
 
+[astra]
+url = "http://localhost:9000"
+token = "change_this_to_a_secure_token"
+internal_secret = "change_this_to_match_astra_internal_secret"
+
 [secret]
 token = "change_this_to_a_secure_token"
 
