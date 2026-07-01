@@ -110,12 +110,49 @@ func DeleteTenant(c *gin.Context) {
 		return
 	}
 
-	if err := service.DeleteTenant(recordID); err != nil {
+	var req struct {
+		Namespace string `json:"namespace"`
+	}
+	c.ShouldBindJSON(&req)
+
+	if err := service.DeleteTenant(recordID, req.Namespace); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"status": 200, "message": "租户已删除"})
+	c.JSON(http.StatusOK, gin.H{"status": 200, "message": "租户已删除（DNS + 数据库数据）"})
+}
+
+func BanTenant(c *gin.Context) {
+	recordID := c.Param("id")
+	if recordID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"detail": "记录 ID 不能为空"})
+		return
+	}
+
+	if err := service.BanTenant(recordID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": 200, "message": "租户已封禁（仅删除 DNS 记录）"})
+}
+
+func CleanupTenant(c *gin.Context) {
+	var req struct {
+		Namespace string `json:"namespace"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.Namespace == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"detail": "namespace 不能为空"})
+		return
+	}
+
+	if err := service.CleanupTenant(req.Namespace); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": 200, "message": "残留数据已清理"})
 }
 
 func namespaceToSubdomain(ns string) string {

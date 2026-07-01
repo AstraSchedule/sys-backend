@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sys-backend/db"
 
 	"sys-backend/config"
 
@@ -124,8 +125,28 @@ func CreateTenant(subdomain string) (*TenantInfo, error) {
 	}, nil
 }
 
-// DeleteTenant 删除 Cloudflare DNS 记录
-func DeleteTenant(recordID string) error {
+// DeleteTenant 删除 DNS 记录并清除数据库中该 namespace 的所有数据
+func DeleteTenant(recordID, namespace string) error {
+	if err := deleteDNSRecord(recordID); err != nil {
+		return err
+	}
+	if err := DeleteNamespaceData(namespace); err != nil {
+		logrus.Warnf("DNS 已删除但数据库清理失败: %v", err)
+	}
+	return nil
+}
+
+// BanTenant 封禁租户：仅删除 DNS 记录，保留数据库数据
+func BanTenant(recordID string) error {
+	return deleteDNSRecord(recordID)
+}
+
+// CleanupTenant 清理残留：仅删除数据库中该 namespace 的数据（用于异常租户）
+func CleanupTenant(namespace string) error {
+	return DeleteNamespaceData(namespace)
+}
+
+func deleteDNSRecord(recordID string) error {
 	client := newClient()
 
 	_, err := client.DNS.Records.Delete(context.TODO(), recordID, dns.RecordDeleteParams{
@@ -136,6 +157,20 @@ func DeleteTenant(recordID string) error {
 	}
 
 	logrus.Infof("[CF] 已删除 DNS 记录: id=%s", recordID)
+	return nil
+}
+
+// DeleteNamespaceData 删除 Astra 数据库中指定 namespace 的所有数据
+func DeleteNamespaceData(namespace string) error {
+	tables := []string{"users", "autorun_records", "countdown_records"}
+	for _, table := range tables {
+		result := db.GetDB().Exec(fmt.Sprintf("DELETE FROM %s WHERE namespace = ?", table), namespace)
+		if result.Error != nil {
+			logrus.Warnf("删除 %s 表中 namespace=%s 数据失败: %v", table, namespace, result.Error)
+		} else {
+			logrus.Infof("已删除 %s 表中 %d 条 namespace=%s 记录", table, result.RowsAffected, namespace)
+		}
+	}
 	return nil
 }
 

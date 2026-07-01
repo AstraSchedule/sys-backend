@@ -57,6 +57,8 @@ func Setup() *gin.Engine {
 			auth.GET("/tenants", web.ListTenants)
 			auth.POST("/tenants", middleware.RequireWrite(), web.CreateTenant)
 			auth.DELETE("/tenants/:id", middleware.RequireWrite(), web.DeleteTenant)
+			auth.POST("/tenants/:id/ban", middleware.RequireWrite(), web.BanTenant)
+			auth.POST("/tenants/cleanup", middleware.RequireWrite(), web.CleanupTenant)
 
 			// Astra users (tenant user management)
 			auth.GET("/astra-users", web.ListAstraUsers)
