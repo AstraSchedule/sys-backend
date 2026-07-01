@@ -5,6 +5,7 @@ import (
 	"sys-backend/db"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type BackupPayload struct {
@@ -49,6 +50,13 @@ func ExportBackup(c *gin.Context) {
 	c.JSON(http.StatusOK, payload)
 }
 
+// importTableRows 将记录列表导入到指定表
+func importTableRows(gdb *gorm.DB, table string, records []map[string]interface{}) {
+	for _, record := range records {
+		gdb.Table(table).Create(record)
+	}
+}
+
 func ImportBackup(c *gin.Context) {
 	var payload BackupPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
@@ -61,38 +69,19 @@ func ImportBackup(c *gin.Context) {
 		mode = m
 	}
 
-	// Import based on mode
 	if mode == "full" || mode == "dashboard" {
-		for _, record := range payload.SystemUsers {
-			db.SysDB.Table("system_users").Create(record)
-		}
-		for _, record := range payload.Tenants {
-			db.SysDB.Table("tenants").Create(record)
-		}
+		importTableRows(db.SysDB, "system_users", payload.SystemUsers)
+		importTableRows(db.SysDB, "tenants", payload.Tenants)
 	}
 
 	if mode == "full" || mode == "saas" {
-		for _, record := range payload.Schedules {
-			db.DB.Table("schedules").Create(record)
-		}
-		for _, record := range payload.ClientConfigs {
-			db.DB.Table("client_configs").Create(record)
-		}
-		for _, record := range payload.Timetables {
-			db.DB.Table("timetables").Create(record)
-		}
-		for _, record := range payload.Subjects {
-			db.DB.Table("subjects").Create(record)
-		}
-		for _, record := range payload.DataVersions {
-			db.DB.Table("data_versions").Create(record)
-		}
-		for _, record := range payload.AutorunRecords {
-			db.DB.Table("autorun_records").Create(record)
-		}
-		for _, record := range payload.CountdownRecords {
-			db.DB.Table("countdown_records").Create(record)
-		}
+		importTableRows(db.DB, "schedules", payload.Schedules)
+		importTableRows(db.DB, "client_configs", payload.ClientConfigs)
+		importTableRows(db.DB, "timetables", payload.Timetables)
+		importTableRows(db.DB, "subjects", payload.Subjects)
+		importTableRows(db.DB, "data_versions", payload.DataVersions)
+		importTableRows(db.DB, "autorun_records", payload.AutorunRecords)
+		importTableRows(db.DB, "countdown_records", payload.CountdownRecords)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"status": 200, "message": "导入成功"})

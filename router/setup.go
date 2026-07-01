@@ -10,6 +10,8 @@ import (
 	"time"
 )
 
+const routeDataTableID = "/data/:table/:id"
+
 func Setup() *gin.Engine {
 	r := gin.Default()
 
@@ -63,10 +65,10 @@ func Setup() *gin.Engine {
 			// Data management
 			auth.GET("/data/tables", web.ListTables)
 			auth.GET("/data/:table", web.ListTableData)
-			auth.GET("/data/:table/:id", web.GetRecord)
+			auth.GET(routeDataTableID, web.GetRecord)
 			auth.POST("/data/:table", middleware.RequireWrite(), web.CreateRecord)
-			auth.PUT("/data/:table/:id", middleware.RequireWrite(), web.UpdateRecord)
-			auth.DELETE("/data/:table/:id", middleware.RequireWrite(), web.DeleteRecord)
+			auth.PUT(routeDataTableID, middleware.RequireWrite(), web.UpdateRecord)
+			auth.DELETE(routeDataTableID, middleware.RequireWrite(), web.DeleteRecord)
 
 			// Backup/Restore
 			auth.GET("/backup/export", web.ExportBackup)

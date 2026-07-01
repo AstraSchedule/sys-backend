@@ -9,26 +9,26 @@ import (
 )
 
 type astraUserRecord struct {
-	ID               uint   `json:"id"`
-	Namespace        string `json:"namespace"`
-	Username         string `json:"username"`
-	Role             string `json:"role"`
-	Scope            string `json:"scope"`
-	MustChangePwd    bool   `json:"must_change_pwd"`
-	MustChangeUsername bool `json:"must_change_username"`
+	ID                 uint   `json:"id"`
+	Namespace          string `json:"namespace"`
+	Username           string `json:"username"`
+	Role               string `json:"role"`
+	Scope              string `json:"scope"`
+	MustChangePwd      bool   `json:"must_change_pwd"`
+	MustChangeUsername bool   `json:"must_change_username"`
 }
 
 func ListAstraUsers(c *gin.Context) {
 	namespace := c.Query("namespace")
 
 	var rows []struct {
-		ID               uint   `gorm:"column:id"`
-		Namespace        string `gorm:"column:namespace"`
-		Username         string `gorm:"column:username"`
-		Role             string `gorm:"column:role"`
-		Scope            string `gorm:"column:scope"`
-		MustChangePwd    bool   `gorm:"column:must_change_pwd"`
-		MustChangeUsername bool `gorm:"column:must_change_username"`
+		ID                 uint   `gorm:"column:id"`
+		Namespace          string `gorm:"column:namespace"`
+		Username           string `gorm:"column:username"`
+		Role               string `gorm:"column:role"`
+		Scope              string `gorm:"column:scope"`
+		MustChangePwd      bool   `gorm:"column:must_change_pwd"`
+		MustChangeUsername bool   `gorm:"column:must_change_username"`
 	}
 
 	query := db.DB.Table("users")
@@ -68,11 +68,11 @@ func CreateAstraUser(c *gin.Context) {
 	}
 
 	row := map[string]interface{}{
-		"namespace":     req.Namespace,
-		"username":      req.Username,
-		"password_hash": hash,
-		"role":          req.Role,
-		"scope":         req.Scope,
+		"namespace":       req.Namespace,
+		"username":        req.Username,
+		"password_hash":   hash,
+		"role":            req.Role,
+		"scope":           req.Scope,
 		"must_change_pwd": true,
 	}
 
@@ -88,10 +88,10 @@ func UpdateAstraUser(c *gin.Context) {
 	id := c.Param("id")
 
 	var req struct {
-		Username  *string `json:"username"`
-		Password  *string `json:"password"`
-		Role      *string `json:"role"`
-		Scope     *string `json:"scope"`
+		Username *string `json:"username"`
+		Password *string `json:"password"`
+		Role     *string `json:"role"`
+		Scope    *string `json:"scope"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"detail": "无效参数"})

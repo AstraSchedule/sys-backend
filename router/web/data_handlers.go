@@ -9,6 +9,8 @@ import (
 	"gorm.io/gorm"
 )
 
+const whereID = "id = ?"
+
 func serializeMapValues(data map[string]interface{}) map[string]interface{} {
 	result := make(map[string]interface{})
 	for k, v := range data {
@@ -40,6 +42,10 @@ func ListTables(c *gin.Context) {
 
 func ListTableData(c *gin.Context) {
 	table := c.Param("table")
+	if !isAllowedTable(table) {
+		c.JSON(http.StatusBadRequest, gin.H{"detail": "不允许的操作表"})
+		return
+	}
 	var result []map[string]interface{}
 
 	var gdb *gorm.DB
@@ -60,6 +66,10 @@ func ListTableData(c *gin.Context) {
 
 func GetRecord(c *gin.Context) {
 	table := c.Param("table")
+	if !isAllowedTable(table) {
+		c.JSON(http.StatusBadRequest, gin.H{"detail": "不允许的操作表"})
+		return
+	}
 	id := c.Param("id")
 
 	var result map[string]interface{}
@@ -72,7 +82,7 @@ func GetRecord(c *gin.Context) {
 		gdb = db.DB
 	}
 
-	if err := gdb.Table(table).Where("id = ?", id).First(&result).Error; err != nil {
+	if err := gdb.Table(table).Where(whereID, id).First(&result).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"detail": "记录不存在"})
 		return
 	}
@@ -82,6 +92,10 @@ func GetRecord(c *gin.Context) {
 
 func CreateRecord(c *gin.Context) {
 	table := c.Param("table")
+	if !isAllowedTable(table) {
+		c.JSON(http.StatusBadRequest, gin.H{"detail": "不允许的操作表"})
+		return
+	}
 
 	var data map[string]interface{}
 	if err := c.ShouldBindJSON(&data); err != nil {
@@ -108,6 +122,10 @@ func CreateRecord(c *gin.Context) {
 
 func UpdateRecord(c *gin.Context) {
 	table := c.Param("table")
+	if !isAllowedTable(table) {
+		c.JSON(http.StatusBadRequest, gin.H{"detail": "不允许的操作表"})
+		return
+	}
 	id := c.Param("id")
 
 	var data map[string]interface{}
@@ -125,7 +143,7 @@ func UpdateRecord(c *gin.Context) {
 	}
 
 	serialized := serializeMapValues(data)
-	if err := gdb.Table(table).Where("id = ?", id).Updates(serialized).Error; err != nil {
+	if err := gdb.Table(table).Where(whereID, id).Updates(serialized).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -135,6 +153,10 @@ func UpdateRecord(c *gin.Context) {
 
 func DeleteRecord(c *gin.Context) {
 	table := c.Param("table")
+	if !isAllowedTable(table) {
+		c.JSON(http.StatusBadRequest, gin.H{"detail": "不允许的操作表"})
+		return
+	}
 	id := c.Param("id")
 
 	var gdb *gorm.DB
@@ -145,7 +167,7 @@ func DeleteRecord(c *gin.Context) {
 		gdb = db.DB
 	}
 
-	result := gdb.Table(table).Where("id = ?", id).Delete(nil)
+	result := gdb.Table(table).Where(whereID, id).Delete(nil)
 	if result.RowsAffected == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"detail": "记录不存在"})
 		return
