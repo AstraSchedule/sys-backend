@@ -9,8 +9,11 @@ import (
 )
 
 type TenantView struct {
+	RecordID  string `json:"record_id"`
 	Subdomain string `json:"subdomain"`
 	Namespace string `json:"namespace"`
+	Target    string `json:"target,omitempty"`
+	Type      string `json:"type,omitempty"`
 	Status    string `json:"status"` // normal, orphan, abnormal
 }
 
@@ -43,19 +46,18 @@ func ListTenants(c *gin.Context) {
 
 	// Normal: in both CF and DB
 	for _, t := range cfTenants {
+		status := "orphan"
 		if dbNamespaces[t.Namespace] {
-			result = append(result, TenantView{
-				Subdomain: t.Subdomain,
-				Namespace: t.Namespace,
-				Status:    "normal",
-			})
-		} else {
-			result = append(result, TenantView{
-				Subdomain: t.Subdomain,
-				Namespace: t.Namespace,
-				Status:    "orphan",
-			})
+			status = "normal"
 		}
+		result = append(result, TenantView{
+			RecordID:  t.RecordID,
+			Subdomain: t.Subdomain,
+			Namespace: t.Namespace,
+			Target:    t.Target,
+			Type:      t.Type,
+			Status:    status,
+		})
 	}
 
 	// Abnormal: in DB but not in CF
@@ -71,6 +73,49 @@ func ListTenants(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": result})
+}
+
+func CreateTenant(c *gin.Context) {
+	var req struct {
+		Subdomain string `json:"subdomain"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.Subdomain == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"detail": "subdomain 不能为空"})
+		return
+	}
+
+	tenant, err := service.CreateTenant(req.Subdomain)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status": 200,
+		"data": TenantView{
+			RecordID:  tenant.RecordID,
+			Subdomain: tenant.Subdomain,
+			Namespace: tenant.Namespace,
+			Target:    tenant.Target,
+			Type:      tenant.Type,
+			Status:    tenant.Status,
+		},
+	})
+}
+
+func DeleteTenant(c *gin.Context) {
+	recordID := c.Param("id")
+	if recordID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"detail": "记录 ID 不能为空"})
+		return
+	}
+
+	if err := service.DeleteTenant(recordID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": 200, "message": "租户已删除"})
 }
 
 func namespaceToSubdomain(ns string) string {
