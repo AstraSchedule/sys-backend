@@ -1,30 +1,17 @@
 package service
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
-	"time"
 
 	"sys-backend/config"
 
+	"github.com/cloudflare/cloudflare-go/v7"
+	"github.com/cloudflare/cloudflare-go/v7/dns"
+	"github.com/cloudflare/cloudflare-go/v7/option"
 	"github.com/sirupsen/logrus"
 )
-
-type CFRecord struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	Type    string `json:"type"`
-	Content string `json:"content"`
-	Comment string `json:"comment"`
-}
-
-type CFResponse struct {
-	Success bool       `json:"success"`
-	Result  []CFRecord `json:"result"`
-}
 
 type TenantInfo struct {
 	Subdomain string
@@ -38,34 +25,24 @@ func FetchSaaSSubdomains() ([]TenantInfo, error) {
 		return nil, fmt.Errorf("Cloudflare API 凭据未配置")
 	}
 
-	url := fmt.Sprintf("https://api.cloudflare.com/client/v4/zones/%s/dns_records?per_page=100", cfg.ZoneID)
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+cfg.APIToken)
-	req.Header.Set("Content-Type", "application/json")
+	client := cloudflare.NewClient(option.WithAPIToken(cfg.APIToken))
 
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("请求 Cloudflare API 失败: %v", err)
+	var allRecords []dns.RecordResponse
+	pager := client.DNS.Records.ListAutoPaging(context.Background(), dns.RecordListParams{
+		ZoneID:  cloudflare.F(cfg.ZoneID),
+		PerPage: cloudflare.F(100.0),
+	})
+	for pager.Next() {
+		allRecords = append(allRecords, pager.Current())
 	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
-	var cfResp CFResponse
-	if err := json.Unmarshal(body, &cfResp); err != nil {
-		return nil, fmt.Errorf("解析 Cloudflare 响应失败: %v", err)
-	}
-
-	if !cfResp.Success {
-		return nil, fmt.Errorf("Cloudflare API 返回失败")
+	if err := pager.Err(); err != nil {
+		return nil, fmt.Errorf("查询 Cloudflare DNS 记录失败: %v", err)
 	}
 
 	var tenants []TenantInfo
-	for _, r := range cfResp.Result {
-		if r.Type != "CNAME" && r.Type != "A" {
+	for _, r := range allRecords {
+		recordType := string(r.Type)
+		if recordType != "CNAME" && recordType != "A" {
 			continue
 		}
 		if !strings.Contains(strings.ToLower(r.Comment), "saas") {
@@ -76,10 +53,9 @@ func FetchSaaSSubdomains() ([]TenantInfo, error) {
 			continue
 		}
 		subdomain := parts[0]
-		namespace := subdomainToNamespace(subdomain)
 		tenants = append(tenants, TenantInfo{
 			Subdomain: subdomain,
-			Namespace: namespace,
+			Namespace: subdomainToNamespace(subdomain),
 			Status:    "normal",
 		})
 	}
