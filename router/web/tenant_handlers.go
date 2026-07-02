@@ -179,6 +179,25 @@ func CompleteTenant(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": 200, "message": "已为该命名空间创建默认管理员账户"})
 }
 
+func CompleteTenantDNS(c *gin.Context) {
+	var req struct {
+		Namespace string `json:"namespace"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.Namespace == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"detail": "namespace 不能为空"})
+		return
+	}
+
+	subdomain := namespaceToSubdomain(req.Namespace)
+	tenant, err := service.CreateTenant(subdomain)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": 200, "data": tenant, "message": "DNS 记录已创建"})
+}
+
 func CleanupTenant(c *gin.Context) {
 	var req struct {
 		Namespace string `json:"namespace"`
