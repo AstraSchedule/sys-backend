@@ -138,6 +138,47 @@ func BanTenant(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": 200, "message": "租户已封禁（仅删除 DNS 记录）"})
 }
 
+func CompleteTenant(c *gin.Context) {
+	var req struct {
+		Namespace string `json:"namespace"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.Namespace == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"detail": "namespace 不能为空"})
+		return
+	}
+
+	// 检查是否已有用户
+	var count int64
+	if err := db.DB.Table("users").Where("namespace = ?", req.Namespace).Count(&count).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if count > 0 {
+		c.JSON(http.StatusOK, gin.H{"status": 200, "message": "该命名空间已存在用户，无需补全"})
+		return
+	}
+
+	// 创建默认管理员
+	hash, err := service.HashPassword("admin")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "生成密码哈希失败"})
+		return
+	}
+	admin := map[string]interface{}{
+		"namespace":      req.Namespace,
+		"username":       "admin",
+		"password_hash":  hash,
+		"role":           "admin",
+		"must_change_pwd": true,
+	}
+	if err := db.DB.Table("users").Create(admin).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": 200, "message": "已为该命名空间创建默认管理员账户"})
+}
+
 func CleanupTenant(c *gin.Context) {
 	var req struct {
 		Namespace string `json:"namespace"`
