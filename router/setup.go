@@ -83,6 +83,7 @@ func Setup() *gin.Engine {
 			// Database rebuild
 			auth.POST("/database/rebuild", middleware.RequireWrite(), web.RebuildDatabase)
 			auth.DELETE("/database/drop/:table", middleware.RequireWrite(), web.DropTable)
+			auth.POST("/database/repair", middleware.RequireWrite(), web.RepairDatabase)
 		}
 	}
 
