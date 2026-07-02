@@ -162,7 +162,10 @@ func deleteDNSRecord(recordID string) error {
 
 // DeleteNamespaceData 删除 Astra 数据库中指定 namespace 的所有数据
 func DeleteNamespaceData(namespace string) error {
-	tables := []string{"users", "autorun_records", "countdown_records"}
+	if namespace == "" {
+		return fmt.Errorf("namespace 不能为空，跳过数据库清理")
+	}
+	tables := []string{"users", "autorun_records", "countdown_records", "schedules", "client_configs", "timetables", "subjects", "data_versions"}
 	for _, table := range tables {
 		result := db.GetDB().Exec(fmt.Sprintf("DELETE FROM %s WHERE namespace = ?", table), namespace)
 		if result.Error != nil {
