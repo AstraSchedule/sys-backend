@@ -780,6 +780,37 @@
         },
         "security": [{ "jwtAuth": [] }]
       }
+    },
+    "/web/database/repair": {
+      "post": {
+        "summary": "修复 SQLite 数据库",
+        "description": "对 SQLite 数据库执行 VACUUM，重建数据库文件。用于修复 'database disk image is malformed' 错误。",
+        "operationId": "repairDatabase",
+        "tags": ["database"],
+        "responses": {
+          "200": {
+            "description": "修复结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "success" },
+                    "results": {
+                      "type": "object",
+                      "properties": {
+                        "astra_db": { "type": "string" },
+                        "sys_db": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [{ "jwtAuth": [] }]
+      }
     }
   },
   "components": {
