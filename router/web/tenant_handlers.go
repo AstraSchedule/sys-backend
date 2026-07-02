@@ -165,11 +165,12 @@ func CompleteTenant(c *gin.Context) {
 		return
 	}
 	admin := map[string]interface{}{
-		"namespace":      req.Namespace,
-		"username":       "admin",
-		"password_hash":  hash,
-		"role":           "admin",
-		"must_change_pwd": true,
+		"namespace":            req.Namespace,
+		"username":             "admin",
+		"password_hash":        hash,
+		"role":                 "admin",
+		"must_change_pwd":      true,
+		"must_change_username": true,
 	}
 	if err := db.DB.Table("users").Create(admin).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

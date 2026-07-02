@@ -312,6 +312,162 @@
           }
         },
         "security": [{ "jwtAuth": [] }]
+      },
+      "post": {
+        "summary": "创建租户",
+        "description": "在 Cloudflare 创建 CNAME DNS 记录。",
+        "operationId": "createTenant",
+        "tags": ["tenants"],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["subdomain"],
+                "properties": {
+                  "subdomain": { "type": "string", "description": "子域名，如 school-a" }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": { "description": "创建成功", "content": { "application/json": { "schema": { "type": "object", "properties": { "status": { "type": "integer" }, "data": { "$ref": "#/components/schemas/Tenant" } } } } } },
+          "400": { "description": "参数错误" },
+          "500": { "description": "DNS 创建失败" }
+        },
+        "security": [{ "jwtAuth": [] }]
+      }
+    },
+    "/web/tenants/{id}": {
+      "delete": {
+        "summary": "删除租户",
+        "description": "删除 Cloudflare DNS 记录并清除数据库中该 namespace 的所有数据。",
+        "operationId": "deleteTenant",
+        "tags": ["tenants"],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Cloudflare DNS 记录 ID" }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "namespace": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "删除成功", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StatusMessage" } } } },
+          "400": { "description": "记录 ID 不能为空" },
+          "500": { "description": "删除失败" }
+        },
+        "security": [{ "jwtAuth": [] }]
+      }
+    },
+    "/web/tenants/{id}/ban": {
+      "post": {
+        "summary": "封禁租户",
+        "description": "仅删除 Cloudflare DNS 记录，保留数据库数据。",
+        "operationId": "banTenant",
+        "tags": ["tenants"],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Cloudflare DNS 记录 ID" }
+        ],
+        "responses": {
+          "200": { "description": "封禁成功", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StatusMessage" } } } },
+          "400": { "description": "记录 ID 不能为空" },
+          "500": { "description": "删除 DNS 失败" }
+        },
+        "security": [{ "jwtAuth": [] }]
+      }
+    },
+    "/web/tenants/cleanup": {
+      "post": {
+        "summary": "清理残留数据",
+        "description": "仅删除数据库中指定 namespace 的所有数据（用于异常租户）。",
+        "operationId": "cleanupTenant",
+        "tags": ["tenants"],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["namespace"],
+                "properties": {
+                  "namespace": { "type": "string" }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": { "description": "清理成功", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StatusMessage" } } } },
+          "400": { "description": "namespace 不能为空" },
+          "500": { "description": "清理失败" }
+        },
+        "security": [{ "jwtAuth": [] }]
+      }
+    },
+    "/web/tenants/complete": {
+      "post": {
+        "summary": "补全租户数据库",
+        "description": "为孤儿租户（有 DNS 无 DB）创建默认管理员账户。",
+        "operationId": "completeTenant",
+        "tags": ["tenants"],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["namespace"],
+                "properties": {
+                  "namespace": { "type": "string" }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": { "description": "补全成功", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StatusMessage" } } } },
+          "400": { "description": "namespace 不能为空" },
+          "500": { "description": "创建失败" }
+        },
+        "security": [{ "jwtAuth": [] }]
+      }
+    },
+    "/web/tenants/complete-dns": {
+      "post": {
+        "summary": "补全租户 DNS",
+        "description": "为异常租户（有 DB 无 DNS）创建 Cloudflare CNAME 记录。",
+        "operationId": "completeTenantDNS",
+        "tags": ["tenants"],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["namespace"],
+                "properties": {
+                  "namespace": { "type": "string" }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": { "description": "DNS 创建成功", "content": { "application/json": { "schema": { "type": "object", "properties": { "status": { "type": "integer" }, "data": { "$ref": "#/components/schemas/Tenant" }, "message": { "type": "string" } } } } } },
+          "400": { "description": "namespace 不能为空" },
+          "500": { "description": "DNS 创建失败" }
+        },
+        "security": [{ "jwtAuth": [] }]
       }
     },
     "/web/astra-users": {
@@ -661,8 +817,11 @@
       "Tenant": {
         "type": "object",
         "properties": {
+          "record_id": { "type": "string", "description": "Cloudflare DNS 记录 ID" },
           "subdomain": { "type": "string" },
           "namespace": { "type": "string" },
+          "target": { "type": "string", "description": "DNS 记录目标（CNAME/A 记录值）" },
+          "type": { "type": "string", "description": "DNS 记录类型（CNAME/A）" },
           "status": { "type": "string", "enum": ["normal", "orphan", "abnormal"] }
         }
       },
