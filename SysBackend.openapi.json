@@ -726,32 +726,12 @@
     "/web/backup/import": {
       "post": {
         "summary": "数据导入",
-        "description": "支持标准备份和自部署备份。自部署备份会自动为 Astra 表记录填充 namespace。",
         "operationId": "importBackup",
         "tags": ["backup"],
         "requestBody": {
           "content": {
             "application/json": {
-              "schema": {
-                "allOf": [
-                  { "$ref": "#/components/schemas/BackupPayload" },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "source": {
-                        "type": "string",
-                        "enum": ["standard", "self-hosted"],
-                        "default": "standard",
-                        "description": "备份来源：standard 为标准备份，self-hosted 为自部署备份（自动填充 namespace）"
-                      },
-                      "namespace": {
-                        "type": "string",
-                        "description": "自部署备份的目标 namespace（如 cn/getastra/school-a）"
-                      }
-                    }
-                  }
-                ]
-              }
+              "schema": { "$ref": "#/components/schemas/BackupPayload" }
             }
           },
           "required": true
