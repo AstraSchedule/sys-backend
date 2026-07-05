@@ -29,6 +29,41 @@ var sysTableNames = []string{
 	"system_users", "tenants",
 }
 
+func resolveAllowedTable(name string) (string, bool) {
+	switch name {
+	case "schedules":
+		return "schedules", true
+	case "client_configs":
+		return "client_configs", true
+	case "timetables":
+		return "timetables", true
+	case "subjects":
+		return "subjects", true
+	case "data_versions":
+		return "data_versions", true
+	case "autorun_records":
+		return "autorun_records", true
+	case "countdown_records":
+		return "countdown_records", true
+	case "users":
+		return "users", true
+	case "system_users":
+		return "system_users", true
+	case "tenants":
+		return "tenants", true
+	default:
+		return "", false
+	}
+}
+
+func mustAllowedTable(name string) string {
+	table, ok := resolveAllowedTable(name)
+	if !ok {
+		panic("unexpected table name")
+	}
+	return table
+}
+
 func isAstraTable(name string) bool {
 	for _, t := range astraTableNames {
 		if t == name {
@@ -52,9 +87,9 @@ func isSysTable(name string) bool {
 }
 
 func DropTable(c *gin.Context) {
-	tableName := c.Param("table")
+	tableName, ok := resolveAllowedTable(c.Param("table"))
 
-	if !isAllowedTable(tableName) {
+	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"detail": "不允许的操作表"})
 		return
 	}
@@ -83,7 +118,7 @@ func DropTable(c *gin.Context) {
 
 	// Sys tables: direct GORM with model-based migration
 	gdb := getDBForTable(tableName)
-	gdb.Exec("DROP TABLE IF EXISTS " + tableName)
+	gdb.Migrator().DropTable(tableName)
 	switch tableName {
 	case "system_users":
 		db.SysDB.AutoMigrate(&dbTable.SystemUser{})
@@ -101,9 +136,10 @@ type backupEntry struct {
 func backupSysTables(tables []string) []backupEntry {
 	var backups []backupEntry
 	for _, t := range tables {
+		table := mustAllowedTable(t)
 		var rows []map[string]interface{}
-		db.SysDB.Table(t).Find(&rows)
-		backups = append(backups, backupEntry{Name: t, Data: rows})
+		db.SysDB.Table(table).Find(&rows)
+		backups = append(backups, backupEntry{Name: table, Data: rows})
 	}
 	return backups
 }
@@ -111,7 +147,7 @@ func backupSysTables(tables []string) []backupEntry {
 // dropAndRestoreSys 删除并恢复 sys 数据库中的表
 func dropAndRestoreSys(tables []string, backups []backupEntry, shouldImport bool) {
 	for _, t := range tables {
-		db.SysDB.Exec("DROP TABLE IF EXISTS " + t)
+		db.SysDB.Migrator().DropTable(mustAllowedTable(t))
 	}
 	db.SysDB.AutoMigrate(&dbTable.SystemUser{})
 	if shouldImport {

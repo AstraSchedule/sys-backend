@@ -6,7 +6,6 @@ import (
 	"sys-backend/db"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 const whereID = "id = ?"
@@ -41,20 +40,14 @@ func ListTables(c *gin.Context) {
 }
 
 func ListTableData(c *gin.Context) {
-	table := c.Param("table")
-	if !isAllowedTable(table) {
+	table, ok := resolveAllowedTable(c.Param("table"))
+	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"detail": "不允许的操作表"})
 		return
 	}
 	var result []map[string]interface{}
 
-	var gdb *gorm.DB
-	switch table {
-	case "system_users", "tenants":
-		gdb = db.SysDB
-	default:
-		gdb = db.DB
-	}
+	gdb := getDBForTable(table)
 
 	if err := gdb.Table(table).Find(&result).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -65,22 +58,15 @@ func ListTableData(c *gin.Context) {
 }
 
 func GetRecord(c *gin.Context) {
-	table := c.Param("table")
-	if !isAllowedTable(table) {
+	table, ok := resolveAllowedTable(c.Param("table"))
+	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"detail": "不允许的操作表"})
 		return
 	}
 	id := c.Param("id")
 
 	var result map[string]interface{}
-	var gdb *gorm.DB
-
-	switch table {
-	case "system_users", "tenants":
-		gdb = db.SysDB
-	default:
-		gdb = db.DB
-	}
+	gdb := getDBForTable(table)
 
 	if err := gdb.Table(table).Where(whereID, id).First(&result).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"detail": "记录不存在"})
@@ -91,8 +77,8 @@ func GetRecord(c *gin.Context) {
 }
 
 func CreateRecord(c *gin.Context) {
-	table := c.Param("table")
-	if !isAllowedTable(table) {
+	table, ok := resolveAllowedTable(c.Param("table"))
+	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"detail": "不允许的操作表"})
 		return
 	}
@@ -103,13 +89,7 @@ func CreateRecord(c *gin.Context) {
 		return
 	}
 
-	var gdb *gorm.DB
-	switch table {
-	case "system_users", "tenants":
-		gdb = db.SysDB
-	default:
-		gdb = db.DB
-	}
+	gdb := getDBForTable(table)
 
 	serialized := serializeMapValues(data)
 	if err := gdb.Table(table).Create(serialized).Error; err != nil {
@@ -121,8 +101,8 @@ func CreateRecord(c *gin.Context) {
 }
 
 func UpdateRecord(c *gin.Context) {
-	table := c.Param("table")
-	if !isAllowedTable(table) {
+	table, ok := resolveAllowedTable(c.Param("table"))
+	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"detail": "不允许的操作表"})
 		return
 	}
@@ -134,13 +114,7 @@ func UpdateRecord(c *gin.Context) {
 		return
 	}
 
-	var gdb *gorm.DB
-	switch table {
-	case "system_users", "tenants":
-		gdb = db.SysDB
-	default:
-		gdb = db.DB
-	}
+	gdb := getDBForTable(table)
 
 	serialized := serializeMapValues(data)
 	if err := gdb.Table(table).Where(whereID, id).Updates(serialized).Error; err != nil {
@@ -152,20 +126,14 @@ func UpdateRecord(c *gin.Context) {
 }
 
 func DeleteRecord(c *gin.Context) {
-	table := c.Param("table")
-	if !isAllowedTable(table) {
+	table, ok := resolveAllowedTable(c.Param("table"))
+	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"detail": "不允许的操作表"})
 		return
 	}
 	id := c.Param("id")
 
-	var gdb *gorm.DB
-	switch table {
-	case "system_users", "tenants":
-		gdb = db.SysDB
-	default:
-		gdb = db.DB
-	}
+	gdb := getDBForTable(table)
 
 	result := gdb.Table(table).Where(whereID, id).Delete(nil)
 	if result.RowsAffected == 0 {
