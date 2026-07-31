@@ -29,16 +29,27 @@ func Login(c *gin.Context) {
 		return
 	}
 
+	// 登录限流：按 IP+用户名维度限制失败尝试次数，防止暴力破解
+	if !middleware.LoginLimiter.Allow(c.ClientIP(), req.Username) {
+		c.JSON(http.StatusTooManyRequests, gin.H{"detail": "尝试次数过多，请稍后再试"})
+		return
+	}
+
 	var user dbTable.SystemUser
 	if err := db.SysDB.Where("username = ?", req.Username).First(&user).Error; err != nil {
+		middleware.LoginLimiter.Fail(c.ClientIP(), req.Username)
 		c.JSON(http.StatusUnauthorized, gin.H{"detail": "用户名或密码错误"})
 		return
 	}
 
 	if !service.CheckPassword(req.Password, user.PasswordHash) {
+		middleware.LoginLimiter.Fail(c.ClientIP(), req.Username)
 		c.JSON(http.StatusUnauthorized, gin.H{"detail": "用户名或密码错误"})
 		return
 	}
+
+	// 登录成功，清空失败计数
+	middleware.LoginLimiter.Reset(c.ClientIP(), req.Username)
 
 	token, err := service.GenerateToken(config.Configs.Astra.Token, user.ID, user.Username, user.Role, 24)
 	if err != nil {
