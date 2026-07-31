@@ -89,8 +89,30 @@ func FetchSaaSSubdomains() ([]TenantInfo, error) {
 	return tenants, nil
 }
 
+// validateSubdomain 校验 DNS 子域标签合法性（RFC 1123 标签规则），
+// 防止 DNS 记录注入或通配符劫持（如创建 *.getastra.cn 的 CNAME）
+func validateSubdomain(s string) error {
+	if len(s) < 1 || len(s) > 63 {
+		return fmt.Errorf("subdomain 长度必须在 1~63 字符之间")
+	}
+	if s[0] == '-' || s[len(s)-1] == '-' {
+		return fmt.Errorf("subdomain 不能以连字符开头或结尾")
+	}
+	for _, c := range s {
+		if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-') {
+			return fmt.Errorf("subdomain 仅允许小写字母、数字和连字符")
+		}
+	}
+	return nil
+}
+
 // CreateTenant 在 Cloudflare 创建 CNAME 记录，指向 class.getastra.cn
 func CreateTenant(subdomain string) (*TenantInfo, error) {
+	// 安全修复：创建 DNS 记录前校验 subdomain 合法性，禁止通配符/非法标签注入
+	if err := validateSubdomain(subdomain); err != nil {
+		return nil, fmt.Errorf("非法 subdomain: %w", err)
+	}
+
 	cfg := config.Configs.Cloudflare
 	if cfg.APIToken == "" || cfg.ZoneID == "" {
 		return nil, fmt.Errorf("Cloudflare API 凭据未配置")
