@@ -42,7 +42,7 @@ func FetchSaaSSubdomains() ([]TenantInfo, error) {
 		return nil, fmt.Errorf("Cloudflare API 凭据未配置")
 	}
 
-	logrus.Infof("[CF] 开始获取 DNS 记录, ZoneID=%s, Token=%s***", cfg.ZoneID, cfg.APIToken[:min(6, len(cfg.APIToken))])
+	logrus.Infof("[CF] 开始获取 DNS 记录, ZoneID=%s, API Token 已配置", cfg.ZoneID)
 
 	client := newClient()
 
