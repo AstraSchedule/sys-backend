@@ -21,7 +21,10 @@ func Connect() {
 		if cfg.Path == "" {
 			cfg.Path = "./data/sys_backend.db"
 		}
-		dsn = cfg.Path
+		if err := checkNotWAL(cfg.Path); err != nil {
+			logrus.Fatalf("Astra 数据库不可用: %v", err)
+		}
+		dsn = sqliteDSN(cfg.Path)
 	case "mysql":
 		dsn = fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local",
 			cfg.User, cfg.Pass, cfg.Host, cfg.Port, cfg.Name)
