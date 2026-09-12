@@ -1,6 +1,7 @@
 package db
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,52 +33,74 @@ func newWALDatabase(t *testing.T, path string) {
 	closeTestConn(t, conn)
 }
 
-func TestCheckNotWAL_AllowsNewDatabase(t *testing.T) {
-	assert.NoError(t, checkNotWAL(filepath.Join(t.TempDir(), "new.db")))
-	assert.NoError(t, checkNotWAL(":memory:"))
+// journalModeOf 读取连接上实际生效的 journal 模式
+func journalModeOf(t *testing.T, conn *gorm.DB) string {
+	t.Helper()
+	var mode string
+	require.NoError(t, conn.Raw("PRAGMA journal_mode").Scan(&mode).Error)
+	return mode
 }
 
-// TestCheckNotWAL_RejectsWALDatabase 复现线上事故：库一旦被写成 WAL，之后不带任何 pragma 打开
-// 也仍然是 WAL，跨机（NFS）使用就会损坏，所以必须在连接前拦住并提示离线转换。
-func TestCheckNotWAL_RejectsWALDatabase(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "astra_schedule.db")
+// mustFormatVersion 读取库头里的文件格式版本
+func mustFormatVersion(t *testing.T, path string) byte {
+	t.Helper()
+	version, err := sqliteFormatVersion(path)
+	require.NoError(t, err)
+	return version
+}
+
+func TestEnsureRollbackJournal_AllowsNewDatabase(t *testing.T) {
+	assert.NoError(t, ensureRollbackJournal(filepath.Join(t.TempDir(), "new.db")))
+	assert.NoError(t, ensureRollbackJournal(":memory:"))
+}
+
+// TestEnsureRollbackJournal_ConvertsLegacyWALDatabase 复现线上事故：库一旦被写成 WAL，之后不带任何
+// pragma 打开也仍然是 WAL（该属性持久化在库头里），而 WAL 在 NFS 上无法跨机共享，
+// 所以启动时必须自动把它转回 rollback journal。
+func TestEnsureRollbackJournal_ConvertsLegacyWALDatabase(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sys_backend.db")
 	newWALDatabase(t, path)
 
 	rawConn, err := gorm.Open(gormsqlite.Open(path))
 	require.NoError(t, err)
-	var mode string
-	require.NoError(t, rawConn.Raw("PRAGMA journal_mode").Scan(&mode).Error)
-	assert.Equal(t, "wal", mode, "去掉 journal_mode pragma 并不会把已有库转回 rollback journal")
+	assert.Equal(t, "wal", journalModeOf(t, rawConn), "去掉 journal_mode pragma 并不会把已有库转回 rollback journal")
+	assert.Equal(t, byte(sqliteWALFormatVersion), mustFormatVersion(t, path))
 	closeTestConn(t, rawConn)
 
-	err = checkNotWAL(path)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "WAL 模式")
-	assert.Contains(t, err.Error(), "journal_mode="+sqliteJournalMode)
+	require.NoError(t, ensureRollbackJournal(path))
+	assert.NotEqual(t, byte(sqliteWALFormatVersion), mustFormatVersion(t, path))
 
-	// 离线转换之后必须放行
-	convConn, err := gorm.Open(gormsqlite.Open(path))
+	// 转换必须把 WAL 中的数据 checkpoint 进主库，并且可以重复执行
+	conn, err := gorm.Open(gormsqlite.Open(path))
 	require.NoError(t, err)
-	require.NoError(t, convConn.Exec("PRAGMA journal_mode="+sqliteJournalMode).Error)
-	closeTestConn(t, convConn)
-	assert.NoError(t, checkNotWAL(path))
+	assert.Equal(t, "delete", journalModeOf(t, conn))
+	var count int64
+	require.NoError(t, conn.Raw("SELECT COUNT(*) FROM t").Scan(&count).Error)
+	assert.Equal(t, int64(1), count, "转换不能丢数据")
+	closeTestConn(t, conn)
+
+	assert.NoError(t, ensureRollbackJournal(path))
 }
 
-// TestCheckNotWAL_RejectsWALDatabaseWithDSNSuffix DSN 里的 file: URI 与查询串都必须先被解析成
-// 真实文件路径，否则库头检查会被绕过（fail open）。
-func TestCheckNotWAL_RejectsWALDatabaseWithDSNSuffix(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "astra_schedule.db")
-	newWALDatabase(t, path)
-	slashed := filepath.ToSlash(path)
-
-	for _, dsn := range []string{
-		slashed + "?cache=shared",
-		"file:" + slashed,
-		"file:" + slashed + "?cache=shared",
+// TestEnsureRollbackJournal_ResolvesDSN DSN 里的 file: URI 与查询串都必须先被解析成真实文件路径，
+// 否则库头检查会被绕过（fail open）。
+func TestEnsureRollbackJournal_ResolvesDSN(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		format string
+	}{
+		{"普通路径带查询串", "%s?cache=shared"},
+		{"file URI", "file:%s"},
+		{"file URI 带查询串", "file:%s?cache=shared"},
 	} {
-		err := checkNotWAL(dsn)
-		require.Error(t, err, "DSN %q 必须能定位到 WAL 库", dsn)
-		assert.Contains(t, err.Error(), "WAL 模式")
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "sys_backend.db")
+			newWALDatabase(t, path)
+
+			dsn := fmt.Sprintf(tc.format, filepath.ToSlash(path))
+			require.NoError(t, ensureRollbackJournal(dsn), "DSN %q", dsn)
+			assert.NotEqual(t, byte(sqliteWALFormatVersion), mustFormatVersion(t, path), "DSN %q 未能定位到库", dsn)
+		})
 	}
 }
 
@@ -118,9 +141,7 @@ func TestSQLiteDSN_KeepsRollbackJournal(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, conn.Exec("CREATE TABLE t (a integer)").Error)
 
-	var mode string
-	require.NoError(t, conn.Raw("PRAGMA journal_mode").Scan(&mode).Error)
-	assert.Equal(t, "delete", mode)
+	assert.Equal(t, "delete", journalModeOf(t, conn))
 	closeTestConn(t, conn)
 }
 

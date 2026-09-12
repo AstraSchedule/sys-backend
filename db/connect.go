@@ -21,7 +21,7 @@ func Connect() {
 		if cfg.Path == "" {
 			cfg.Path = "./data/sys_backend.db"
 		}
-		if err := checkNotWAL(cfg.Path); err != nil {
+		if err := ensureRollbackJournal(cfg.Path); err != nil {
 			logrus.Fatalf("Astra 数据库不可用: %v", err)
 		}
 		dsn = sqliteDSN(cfg.Path)
