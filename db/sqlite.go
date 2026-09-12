@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"strings"
 )
@@ -29,14 +30,43 @@ const (
 	sqliteWALFormatVersion = 2
 )
 
-// sqliteDSN 构造 SQLite DSN，显式指定忙等待超时。
+// sqliteDSN 在 DSN 上追加忙等待超时。
 // 驱动是纯 Go 的 modernc.org/sqlite（由 libtnb/sqlite 封装）：只识别 _pragma/_txlock 等键，
 // _busy_timeout 这类键会被静默忽略，所以超时必须写成 _pragma=busy_timeout(...)。
 // 这里刻意不写 journal_mode：库在 NFS 上被多台机器共享，绝不能在运行期做 WAL→rollback journal
 // 的转换（那需要一次 checkpoint，而本机的 -shm 视图与其他机器并不一致），转换只能离线做，
 // 见 checkNotWAL。
-func sqliteDSN(path string) string {
-	return fmt.Sprintf("%s?_pragma=busy_timeout(%d)", path, sqliteBusyTimeout)
+// DSN 可能已经带查询串（file: URI），因此按 URI 规则用 & 追加，不能无条件拼 ?。
+func sqliteDSN(dsn string) string {
+	separator := "?"
+	if strings.ContainsRune(dsn, '?') {
+		separator = "&"
+	}
+	return fmt.Sprintf("%s%s_pragma=busy_timeout(%d)", dsn, separator, sqliteBusyTimeout)
+}
+
+// sqliteFilePath 从 DSN 中解析出磁盘上的库文件路径，兼容 file: URI 写法。
+// 不带 file: 前缀的值按普通路径处理（Windows 路径不会被当成 URI scheme 解析）。
+func sqliteFilePath(dsn string) string {
+	if !strings.HasPrefix(dsn, "file:") {
+		return trimSQLiteQuery(dsn)
+	}
+
+	path := trimSQLiteQuery(strings.TrimPrefix(dsn, "file:"))
+	path = strings.TrimPrefix(path, "//localhost")
+	path = strings.TrimPrefix(path, "//")
+	if unescaped, err := url.PathUnescape(path); err == nil {
+		return unescaped
+	}
+	return path
+}
+
+// trimSQLiteQuery 去掉 DSN 中的查询串
+func trimSQLiteQuery(s string) string {
+	if i := strings.IndexByte(s, '?'); i >= 0 {
+		return s[:i]
+	}
+	return s
 }
 
 // checkNotWAL 在连接之前直接读库头，拒绝打开 WAL 模式的库。
@@ -45,9 +75,14 @@ func sqliteDSN(path string) string {
 // journal_mode 是持久化在库头里的属性：库里一旦被写成 WAL，之后即使不带任何 pragma 打开也仍然是
 // WAL，所以必须显式转换回 rollback journal 才能跨机共享。这里不做运行期转换，只拒绝并给出
 // 离线转换命令——转换过程本身就可能造成二次损坏。
-func checkNotWAL(path string) error {
-	if strings.HasPrefix(path, ":memory:") {
+func checkNotWAL(dsn string) error {
+	if strings.HasPrefix(dsn, ":memory:") {
 		return nil // 内存库不跨进程共享
+	}
+
+	path := sqliteFilePath(dsn)
+	if path == "" {
+		return fmt.Errorf("无法从 SQLite DSN %q 解析出库文件路径", dsn)
 	}
 
 	f, err := os.Open(path)

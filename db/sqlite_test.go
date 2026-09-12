@@ -2,6 +2,7 @@ package db
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	gormsqlite "github.com/libtnb/sqlite"
@@ -60,9 +61,51 @@ func TestCheckNotWAL_RejectsWALDatabase(t *testing.T) {
 	assert.NoError(t, checkNotWAL(path))
 }
 
-func TestSQLiteDSN_SetsBusyTimeout(t *testing.T) {
-	dsn := sqliteDSN(filepath.Join("data", "sys_backend.db"))
-	assert.Contains(t, dsn, "_pragma=busy_timeout(5000)")
+// TestCheckNotWAL_RejectsWALDatabaseWithDSNSuffix DSN 里的 file: URI 与查询串都必须先被解析成
+// 真实文件路径，否则库头检查会被绕过（fail open）。
+func TestCheckNotWAL_RejectsWALDatabaseWithDSNSuffix(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "astra_schedule.db")
+	newWALDatabase(t, path)
+	slashed := filepath.ToSlash(path)
+
+	for _, dsn := range []string{
+		slashed + "?cache=shared",
+		"file:" + slashed,
+		"file:" + slashed + "?cache=shared",
+	} {
+		err := checkNotWAL(dsn)
+		require.Error(t, err, "DSN %q 必须能定位到 WAL 库", dsn)
+		assert.Contains(t, err.Error(), "WAL 模式")
+	}
+}
+
+func TestSQLiteFilePath(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"/mnt/udisk1/astra/astra_schedule.db", "/mnt/udisk1/astra/astra_schedule.db"},
+		{"/mnt/udisk1/astra/astra_schedule.db?cache=shared", "/mnt/udisk1/astra/astra_schedule.db"},
+		{"file:/mnt/udisk1/astra/astra_schedule.db", "/mnt/udisk1/astra/astra_schedule.db"},
+		{"file:/mnt/udisk1/astra/astra_schedule.db?cache=shared", "/mnt/udisk1/astra/astra_schedule.db"},
+		{"file:///mnt/udisk1/astra/astra_schedule.db", "/mnt/udisk1/astra/astra_schedule.db"},
+		{"file://localhost/mnt/udisk1/astra/astra_schedule.db", "/mnt/udisk1/astra/astra_schedule.db"},
+		{"file:/mnt/udisk1/astra/my%20schedule.db", "/mnt/udisk1/astra/my schedule.db"},
+	}
+	for _, c := range cases {
+		assert.Equal(t, c.want, sqliteFilePath(c.in), "DSN %q", c.in)
+	}
+}
+
+func TestSQLiteDSN_AppendsBusyTimeout(t *testing.T) {
+	assert.Equal(t, "data/sys_backend.db?_pragma=busy_timeout(5000)",
+		sqliteDSN("data/sys_backend.db"))
+	assert.Equal(t, "file:/data/sys_backend.db?_pragma=busy_timeout(5000)",
+		sqliteDSN("file:/data/sys_backend.db"))
+
+	dsn := sqliteDSN("file:/data/sys_backend.db?mode=ro")
+	assert.Equal(t, "file:/data/sys_backend.db?mode=ro&_pragma=busy_timeout(5000)", dsn)
+	assert.Equal(t, 1, strings.Count(dsn, "?"), "按 URI 规则追加，不能出现第二个 ?")
 	assert.NotContains(t, dsn, "journal_mode", "运行期不得做 journal 模式转换")
 }
 
