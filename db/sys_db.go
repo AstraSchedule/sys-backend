@@ -30,7 +30,7 @@ func ConnectSysDB() {
 		if err := os.MkdirAll(filepath.Dir(sqlitePath), 0755); err != nil {
 			logrus.Fatalf("创建数据库目录失败: %v", err)
 		}
-		if err := checkNotWAL(cfg.Path); err != nil {
+		if err := ensureRollbackJournal(cfg.Path); err != nil {
 			logrus.Fatalf("系统数据库不可用: %v", err)
 		}
 		dsn = sqliteDSN(cfg.Path)
