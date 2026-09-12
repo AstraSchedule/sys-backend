@@ -23,7 +23,11 @@ func ConnectSysDB() {
 		if cfg.Path == "" {
 			cfg.Path = "./data/sys_backend.db"
 		}
-		if err := os.MkdirAll(filepath.Dir(cfg.Path), 0755); err != nil {
+		sqlitePath := sqliteFilePath(cfg.Path)
+		if sqlitePath == "" {
+			logrus.Fatalf("无法从 SQLite DSN %q 解析出库文件路径", cfg.Path)
+		}
+		if err := os.MkdirAll(filepath.Dir(sqlitePath), 0755); err != nil {
 			logrus.Fatalf("创建数据库目录失败: %v", err)
 		}
 		if err := checkNotWAL(cfg.Path); err != nil {

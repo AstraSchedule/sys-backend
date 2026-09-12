@@ -1,6 +1,7 @@
 package db
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -9,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
+	"sys-backend/config"
 )
 
 // closeTestConn 关闭测试连接，确保数据真正落盘
@@ -120,4 +122,28 @@ func TestSQLiteDSN_KeepsRollbackJournal(t *testing.T) {
 	require.NoError(t, conn.Raw("PRAGMA journal_mode").Scan(&mode).Error)
 	assert.Equal(t, "delete", mode)
 	closeTestConn(t, conn)
+}
+
+func TestConnectSysDBCreatesDatabaseForFileURI(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "data", "sys_backend.db")
+	_, err := os.Stat(filepath.Dir(path))
+	require.ErrorIs(t, err, os.ErrNotExist)
+
+	originalConfigs := config.Configs
+	originalSysDB := SysDB
+	config.Configs.SysDB = config.DBConfig{
+		Type: "sqlite",
+		Path: "file:" + filepath.ToSlash(path),
+	}
+	t.Cleanup(func() {
+		if SysDB != nil && SysDB != originalSysDB {
+			closeTestConn(t, SysDB)
+		}
+		SysDB = originalSysDB
+		config.Configs = originalConfigs
+	})
+
+	ConnectSysDB()
+	_, err = os.Stat(path)
+	require.NoError(t, err)
 }
