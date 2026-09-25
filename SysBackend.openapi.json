@@ -9,7 +9,7 @@
     { "name": "health", "description": "健康检查" },
     { "name": "auth", "description": "认证（登录、用户信息、改密、密码验证）" },
     { "name": "system-users", "description": "系统用户管理（Dashboard 账户）" },
-    { "name": "tenants", "description": "租户管理（Cloudflare DNS 对比 DB namespace）" },
+    { "name": "tenants", "description": "租户管理（ESA DNS 对比 DB namespace）" },
     { "name": "astra-users", "description": "租户用户管理（操作 Astra 库 users 表）" },
     { "name": "data", "description": "数据管理（浏览/编辑/删除数据库记录）" },
     { "name": "backup", "description": "数据导出/导入" },
@@ -289,7 +289,7 @@
     "/web/tenants": {
       "get": {
         "summary": "获取租户列表",
-        "description": "对比 Cloudflare DNS 与数据库 namespace，返回租户状态（normal/orphan/abnormal）。",
+        "description": "对比 ESA DNS 与数据库 namespace，返回租户状态（normal/orphan/abnormal）。",
         "operationId": "listTenants",
         "tags": ["tenants"],
         "responses": {
@@ -315,7 +315,7 @@
       },
       "post": {
         "summary": "创建租户",
-        "description": "在 Cloudflare 创建 CNAME DNS 记录。",
+        "description": "在 ESA 站点内创建租户的 CNAME 记录（回源指向源地址池）。",
         "operationId": "createTenant",
         "tags": ["tenants"],
         "requestBody": {
@@ -343,11 +343,11 @@
     "/web/tenants/{id}": {
       "delete": {
         "summary": "删除租户",
-        "description": "删除 Cloudflare DNS 记录并清除数据库中该 namespace 的所有数据。",
+        "description": "删除 ESA DNS 记录并清除数据库中该 namespace 的所有数据。",
         "operationId": "deleteTenant",
         "tags": ["tenants"],
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Cloudflare DNS 记录 ID" }
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "ESA DNS 记录 ID" }
         ],
         "requestBody": {
           "content": {
@@ -372,11 +372,11 @@
     "/web/tenants/{id}/ban": {
       "post": {
         "summary": "封禁租户",
-        "description": "仅删除 Cloudflare DNS 记录，保留数据库数据。",
+        "description": "仅删除 ESA DNS 记录，保留数据库数据。",
         "operationId": "banTenant",
         "tags": ["tenants"],
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Cloudflare DNS 记录 ID" }
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "ESA DNS 记录 ID" }
         ],
         "responses": {
           "200": { "description": "封禁成功", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StatusMessage" } } } },
@@ -445,7 +445,7 @@
     "/web/tenants/complete-dns": {
       "post": {
         "summary": "补全租户 DNS",
-        "description": "为异常租户（有 DB 无 DNS）创建 Cloudflare CNAME 记录。",
+        "description": "为异常租户（有 DB 无 DNS）创建 ESA CNAME 记录。",
         "operationId": "completeTenantDNS",
         "tags": ["tenants"],
         "requestBody": {
@@ -868,7 +868,7 @@
       "Tenant": {
         "type": "object",
         "properties": {
-          "record_id": { "type": "string", "description": "Cloudflare DNS 记录 ID" },
+          "record_id": { "type": "string", "description": "ESA DNS 记录 ID" },
           "subdomain": { "type": "string" },
           "namespace": { "type": "string" },
           "target": { "type": "string", "description": "DNS 记录目标（CNAME/A 记录值）" },

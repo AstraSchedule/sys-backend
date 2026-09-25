@@ -26,6 +26,30 @@ url = "http://localhost:9000"
 token = "change_this_to_a_secure_token"
 internal_secret = "change_this_to_match_astra_internal_secret"
 
+[esa]
+# 阿里云边缘安全加速（ESA）站点内租户 DNS 记录。
+# 建议使用只授予 esa 记录读写的最小权限 RAM 身份，不要用主账号 AK。
+access_key_id = ""
+access_key_secret = ""
+site_id = 0
+site_name = "getastra.cn"
+# 回源目标必须是「源地址池」（source_type=OP）：ESA 开启代理时会把回源目标解析成
+# 实际 IP 再回源，填站点内域名（如 class.getastra.cn）会解析到自己的边缘节点形成自环。
+target = "astrasaas.origin-pool.getastra.cn"
+proxied = true
+biz_name = "api"
+source_type = "OP"
+ttl = 1
+endpoint = "esa.cn-hangzhou.aliyuncs.com"
+# 租户记录备注标记，用于把租户记录与 class/to/sys 等基础设施记录区分开。
+tenant_comment = "SaaS"
+
+[mtls]
+# 调用 Astra 后端时的出站 mTLS 客户端证书（可留空表示不使用 mTLS）。
+tls_cert = ""
+tls_key = ""
+tls_ca_cert = ""
+
 [secret]
 token = "change_this_to_a_secure_token"
 

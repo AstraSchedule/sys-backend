@@ -90,8 +90,7 @@ jobs:
           ASTRA_SYS_DB_PATH: "/data/astra/sys_backend.db"
           ASTRA_ASTRA_URL: ${{ secrets.ASTRA_BACKEND_URL }}
           ASTRA_ASTRA_TOKEN: ${{ secrets.ASTRA_SECRET_TOKEN }}
-          ASTRA_CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          ASTRA_CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
-          ASTRA_CLOUDFLARE_DOMAIN: "getastra.cn"
           ASTRA_LOG_DEBUG: "false"
+          # ESA / mTLS 等运行期凭据在 FC 控制台的函数环境变量里维护，
+          # 这里不再注入（--function code 只推代码，不会改动函数配置）。
         run: s deploy -t s.yaml --function code -y
