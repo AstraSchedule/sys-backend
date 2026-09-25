@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"sys-backend/config"
 	"sys-backend/db"
@@ -68,7 +70,8 @@ func listCNAMERecords(ctx context.Context, client *esa.Client) ([]*esa.ListRecor
 			return nil, fmt.Errorf("查询 ESA 记录失败: %w", err)
 		}
 		if resp == nil || resp.Body == nil {
-			return all, nil
+			// 空响应不是「没有下一页」：把它当成功会让租户列表凭空清空。
+			return nil, fmt.Errorf("ESA 返回空响应（第 %d 页）", page)
 		}
 
 		records := resp.Body.Records
@@ -160,10 +163,33 @@ func scanNamespaces() map[string]bool {
 //
 // marker 为空表示没配置标记，此时只靠 namespace 兜底判断。
 func isTenantRecord(comment, subdomain string, namespaces map[string]bool, marker string) bool {
-	if marker != "" && strings.Contains(strings.ToLower(comment), strings.ToLower(marker)) {
+	if hasTenantMarker(comment, marker) {
 		return true
 	}
 	return namespaces[subdomainToNamespace(subdomain)]
+}
+
+// hasTenantMarker 判断备注是否以租户标记开头。
+//
+// 只认「标记出现在开头」：备注等于标记，或标记之后紧跟非字母数字字符（如「SaaS 租户」）。
+// 不用子串匹配，是因为 "non-SaaS" 这类反向说明会被误判成租户标记；
+// 注册服务（reg-to）用同一规则写入，两边必须保持一致。
+func hasTenantMarker(comment, marker string) bool {
+	if marker == "" {
+		return false
+	}
+	trimmed := strings.TrimSpace(comment)
+	if len(trimmed) < len(marker) {
+		return false
+	}
+	if !strings.EqualFold(trimmed[:len(marker)], marker) {
+		return false
+	}
+	if len(trimmed) == len(marker) {
+		return true
+	}
+	next, _ := utf8.DecodeRuneInString(trimmed[len(marker):])
+	return !unicode.IsLetter(next) && !unicode.IsDigit(next)
 }
 
 // subdomainOf 从完整记录名反推子域名；不在站点域名空间内时返回 false。

@@ -237,8 +237,13 @@ func loadTLSContent(val string) ([]byte, error) {
 func buildMTLSTransport() (*http.Transport, error) {
 	transport := &http.Transport{}
 	mtlsCfg := config.Configs.MTLS
-	if mtlsCfg.TLSCert == "" || mtlsCfg.TLSKey == "" {
+	hasCert, hasKey := mtlsCfg.TLSCert != "", mtlsCfg.TLSKey != ""
+	if !hasCert && !hasKey {
 		return transport, nil
+	}
+	// 只配一半等于静默降级成明文出站：宁可让调用直接失败，也不要在不知情的情况下失去 mTLS。
+	if hasCert != hasKey {
+		return nil, fmt.Errorf("mTLS 的客户端证书与私钥必须成对配置（cert 已配置=%v，key 已配置=%v）", hasCert, hasKey)
 	}
 	certPEM, err := loadTLSContent(mtlsCfg.TLSCert)
 	if err != nil {

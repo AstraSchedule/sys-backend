@@ -21,6 +21,8 @@ func TestIsTenantRecord(t *testing.T) {
 		{"备注标记命中", "SaaS", "brandnew", "SaaS", true},
 		{"备注大小写不敏感", "saas", "brandnew", "SaaS", true},
 		{"备注含标记即可", "SaaS 租户", "brandnew", "SaaS", true},
+		{"反向说明不算标记", "non-SaaS", "brandnew", "SaaS", false},
+		{"标记不在开头不算", "租户 SaaS", "brandnew", "SaaS", false},
 		{"无备注但库里有 namespace（历史记录）", "", "kuohu", "SaaS", true},
 		{"基础设施记录：无备注且库里没有", "", "class", "SaaS", false},
 		{"无备注且子域名不存在", "", "brandnew", "SaaS", false},
