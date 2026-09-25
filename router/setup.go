@@ -53,7 +53,7 @@ func Setup() *gin.Engine {
 			auth.PUT("/system-users/:id", middleware.RequireWrite(), web.UpdateSystemUser)
 			auth.DELETE("/system-users/:id", middleware.RequireWrite(), web.DeleteSystemUser)
 
-			// Tenants (Cloudflare DNS CRUD)
+			// Tenants (ESA DNS CRUD)
 			auth.GET("/tenants", web.ListTenants)
 			auth.POST("/tenants", middleware.RequireWrite(), web.CreateTenant)
 			auth.DELETE("/tenants/:id", middleware.RequireWrite(), web.DeleteTenant)

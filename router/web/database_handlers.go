@@ -236,15 +236,20 @@ func loadTLSContent(val string) ([]byte, error) {
 // buildMTLSTransport 构建带 mTLS 客户端证书的 HTTP Transport
 func buildMTLSTransport() (*http.Transport, error) {
 	transport := &http.Transport{}
-	cfCfg := config.Configs.Cloudflare
-	if cfCfg.TLSCert == "" || cfCfg.TLSKey == "" {
+	mtlsCfg := config.Configs.MTLS
+	hasCert, hasKey := mtlsCfg.TLSCert != "", mtlsCfg.TLSKey != ""
+	if !hasCert && !hasKey {
 		return transport, nil
 	}
-	certPEM, err := loadTLSContent(cfCfg.TLSCert)
+	// 只配一半等于静默降级成明文出站：宁可让调用直接失败，也不要在不知情的情况下失去 mTLS。
+	if hasCert != hasKey {
+		return nil, fmt.Errorf("mTLS 的客户端证书与私钥必须成对配置（cert 已配置=%v，key 已配置=%v）", hasCert, hasKey)
+	}
+	certPEM, err := loadTLSContent(mtlsCfg.TLSCert)
 	if err != nil {
 		return nil, fmt.Errorf("加载客户端证书失败: %v", err)
 	}
-	keyPEM, err := loadTLSContent(cfCfg.TLSKey)
+	keyPEM, err := loadTLSContent(mtlsCfg.TLSKey)
 	if err != nil {
 		return nil, fmt.Errorf("加载客户端私钥失败: %v", err)
 	}
@@ -253,8 +258,8 @@ func buildMTLSTransport() (*http.Transport, error) {
 		return nil, fmt.Errorf("解析客户端证书失败: %v", err)
 	}
 	tlsCfg := &tls.Config{Certificates: []tls.Certificate{cert}}
-	if cfCfg.TLSCACert != "" {
-		caPEM, err := loadTLSContent(cfCfg.TLSCACert)
+	if mtlsCfg.TLSCACert != "" {
+		caPEM, err := loadTLSContent(mtlsCfg.TLSCACert)
 		if err != nil {
 			return nil, fmt.Errorf("加载 CA 证书失败: %v", err)
 		}

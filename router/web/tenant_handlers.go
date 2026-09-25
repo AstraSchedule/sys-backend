@@ -18,11 +18,11 @@ type TenantView struct {
 }
 
 func ListTenants(c *gin.Context) {
-	// 1. Fetch from Cloudflare
-	cfTenants, err := service.FetchSaaSSubdomains()
+	// 1. Fetch from ESA
+	dnsTenants, err := service.FetchSaaSSubdomains()
 	if err != nil {
-		// If Cloudflare not configured, just scan DB
-		cfTenants = nil
+		// If ESA not configured, just scan DB
+		dnsTenants = nil
 	}
 
 	// 2. Scan all namespaces from Astra DB
@@ -36,16 +36,16 @@ func ListTenants(c *gin.Context) {
 		dbNamespaces[r.Namespace] = true
 	}
 
-	cfMap := make(map[string]bool)
-	for _, t := range cfTenants {
-		cfMap[t.Namespace] = true
+	dnsMap := make(map[string]bool)
+	for _, t := range dnsTenants {
+		dnsMap[t.Namespace] = true
 	}
 
 	// 3. Build result
 	var result []TenantView
 
-	// Normal: in both CF and DB
-	for _, t := range cfTenants {
+	// Normal: DNS 与数据库都有
+	for _, t := range dnsTenants {
 		status := "orphan"
 		if dbNamespaces[t.Namespace] {
 			status = "normal"
@@ -60,9 +60,9 @@ func ListTenants(c *gin.Context) {
 		})
 	}
 
-	// Abnormal: in DB but not in CF
+	// Abnormal: 数据库有但 DNS 没有
 	for ns := range dbNamespaces {
-		if !cfMap[ns] {
+		if !dnsMap[ns] {
 			subdomain := namespaceToSubdomain(ns)
 			result = append(result, TenantView{
 				Subdomain: subdomain,
