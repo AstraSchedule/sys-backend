@@ -41,16 +41,78 @@ const (
 	sqliteWALFormatVersion = 2
 )
 
-// sqliteDSN 在 DSN 上追加忙等待超时。
+// sqliteDSN 在 DSN 上追加忙等待超时，并剔除会推翻 journal 模式的 pragma。
 // 驱动是纯 Go 的 modernc.org/sqlite（由 libtnb/sqlite 封装）：只识别 _pragma/_txlock 等键，
 // _busy_timeout 这类键会被静默忽略，所以超时必须写成 _pragma=busy_timeout(...)。
 // DSN 可能已经带查询串（file: URI），因此按 URI 规则用 & 追加，不能无条件拼 ?。
+//
+// DSN 里若写了 _pragma=journal_mode(WAL)，正式连接会把 ensureRollbackJournal 刚转好的库
+// 重新推回 WAL —— 而 WAL 依赖的 -shm 在 NFS 客户端之间不共享，跨机使用会损坏数据库。
+// 这里直接剔除这类 pragma 并留 WARN：让配置错误可见，但绝不让它悄悄生效。
 func sqliteDSN(dsn string) string {
-	separator := "?"
-	if strings.ContainsRune(dsn, '?') {
-		separator = "&"
+	base, query := splitSQLiteQuery(dsn)
+
+	kept := make([]string, 0, 4)
+	for _, param := range strings.Split(query, "&") {
+		if param == "" {
+			continue
+		}
+		if isJournalModePragmaParam(param) {
+			logrus.Warnf("SQLite DSN %q 里的 %s 被忽略：journal 模式由启动时的转换统一管理，"+
+				"WAL 在 NFS 上跨机共享会损坏数据库", dsn, param)
+			continue
+		}
+		kept = append(kept, param)
 	}
-	return fmt.Sprintf("%s%s_pragma=busy_timeout(%d)", dsn, separator, sqliteBusyTimeout)
+	kept = append(kept, fmt.Sprintf("_pragma=busy_timeout(%d)", sqliteBusyTimeout))
+
+	return base + "?" + strings.Join(kept, "&")
+}
+
+// splitSQLiteQuery 把 DSN 拆成基础部分与查询串。
+func splitSQLiteQuery(dsn string) (string, string) {
+	if i := strings.IndexByte(dsn, '?'); i >= 0 {
+		return dsn[:i], dsn[i+1:]
+	}
+	return dsn, ""
+}
+
+// isJournalModePragmaParam 判断一个查询串参数是否是 journal_mode pragma。
+//
+// 先做一次百分号解码再判断，否则 _pragma=journal%5Fmode(WAL) 这类写法能绕过剔除。
+func isJournalModePragmaParam(param string) bool {
+	key, value, found := strings.Cut(param, "=")
+	if !found || key != "_pragma" {
+		return false
+	}
+	if decoded, err := url.QueryUnescape(value); err == nil {
+		value = decoded
+	}
+	return strings.Contains(strings.ToLower(value), "journal_mode")
+}
+
+// sqliteIsMemoryDSN 报告 DSN 指向内存库。
+//
+// 内存库不落盘、也不跨进程共享：既不需要检查 journal 模式，更不能照着路径部分去检查磁盘上的
+// 同名文件 —— file:memdb?mode=memory&cache=shared 的路径部分是 memdb，照它去检查会查到一个
+// 与本次连接毫无关系的磁盘文件，而转换用的却是原始 URI（真正打开的是内存库），
+// 检查对象和转换对象根本不是同一个。
+func sqliteIsMemoryDSN(dsn string) bool {
+	if strings.HasPrefix(dsn, ":memory:") {
+		return true
+	}
+	if !strings.HasPrefix(dsn, "file:") {
+		return false
+	}
+	query := ""
+	if i := strings.IndexByte(dsn, '?'); i >= 0 {
+		query = dsn[i+1:]
+	}
+	values, err := url.ParseQuery(query)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(values.Get("mode"), "memory")
 }
 
 // sqliteFilePath 从 DSN 中解析出磁盘上的库文件路径，兼容 file: URI 写法。
@@ -115,8 +177,8 @@ func sqliteWALMessage(path string) string {
 // 转换需要独占锁并做一次 checkpoint：两端可能同时启动，因此带重试；
 // 始终失败时返回错误（拒绝启动），由运维在所有后端停机后离线转换。
 func ensureRollbackJournal(dsn string) error {
-	if strings.HasPrefix(dsn, ":memory:") {
-		return nil // 内存库不跨进程共享
+	if sqliteIsMemoryDSN(dsn) {
+		return nil // 内存库不落盘、不跨进程共享，没有 journal 模式可转换
 	}
 
 	path := sqliteFilePath(dsn)
