@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"os"
 	"strings"
@@ -271,6 +272,12 @@ func buildMTLSTransport() (*http.Transport, error) {
 	return transport, nil
 }
 
+// astraBackendUserAgent 是系统管理端访问 Astra 后端（usr-backend）时携带的 User-Agent。
+// 这是服务对服务的调用，语义上属于客户端同族，因此用 AstraSchedule/ 前缀标识自己，
+// 而不是面向网页端的 AstraWeb/。线上 WAF 会对不含 AstraSchedule 的 UA 发起 JS 质询，
+// 而质询响应是 200 + HTML，不带标识的请求会被拦成质询页、根本到不了后端。
+const astraBackendUserAgent = "AstraSchedule/System"
+
 func callAstraDropTable(tableName string) error {
 	astraURL := config.Configs.Astra.URL
 	if astraURL == "" {
@@ -282,6 +289,7 @@ func callAstraDropTable(tableName string) error {
 	if err != nil {
 		return err
 	}
+	req.Header.Set("User-Agent", astraBackendUserAgent)
 
 	if secret := config.Configs.Astra.InternalSecret; secret != "" {
 		req.Header.Set("X-Internal-Secret", secret)
@@ -303,5 +311,19 @@ func callAstraDropTable(tableName string) error {
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("Astra 后端返回 %d: %s", resp.StatusCode, string(body))
 	}
+	// WAF 的 JS 质询会返回 200 + HTML，只判断状态码会把"被拦下"当成"删表成功"。
+	if contentType := resp.Header.Get("Content-Type"); !isJSONMediaType(contentType) {
+		return fmt.Errorf("Astra 后端返回了非 JSON 响应（Content-Type: %s），可能被 WAF 拦截: %.200s", contentType, string(body))
+	}
 	return nil
+}
+
+// isJSONMediaType 判断响应媒体类型是否为 application/json。
+//
+// 媒体类型大小写不敏感（Application/JSON 同样是合法 JSON），参数也不能用子串匹配
+// 糊弄（text/html; note="application/json" 会骗过 strings.Contains），
+// 因此按 RFC 9110 解析出媒体类型后精确比较；解析失败按不匹配处理。
+func isJSONMediaType(contentType string) bool {
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	return err == nil && mediaType == "application/json"
 }
